@@ -71,8 +71,9 @@ func (r *Router) adjustRoutePath(route *Route) {
 
 // adjustRoutesPaths adjusts all the Router routes
 func (r *Router) adjustRoutesPaths() {
-	for i := range r.routes {
-		r.adjustRoutePath(r.routes[i])
+	routes := r.Routes()
+	for i := range r.Routes() {
+		r.adjustRoutePath(routes[i])
 	}
 }
 
