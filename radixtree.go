@@ -6,10 +6,11 @@ import (
 
 type Routable interface {
 	path() string
+	method() HttpMethod
 }
 
 type Node struct {
-	Data     *Routable
+	Data     map[HttpMethod]*Routable
 	Prefix   string
 	Children []*Node
 }
@@ -77,7 +78,11 @@ func (rt *RadixTree) Insert(data Routable) {
 		return
 	}
 
-	leaf.Data = &data
+	if leaf.Data == nil {
+		leaf.Data = make(map[HttpMethod]*Routable)
+	}
+
+	leaf.Data[data.method()] = &data
 }
 
 func (rt *RadixTree) Traverse(callback func(node *Node)) {
