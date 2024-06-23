@@ -1,26 +1,74 @@
 package churro
 
 import (
+	"regexp"
 	"strings"
 )
 
 type Routable interface {
 	path() string
 	method() HttpMethod
+	matcher() map[string]string
 }
 
 type Node struct {
 	Data     map[HttpMethod]*Routable
 	Prefix   string
 	Children []*Node
+	ParamKey *string
 }
 
 func (n *Node) isLeaf() bool {
 	return n.Data != nil
 }
 
+func (n *Node) isPathParam() bool {
+	return strings.HasPrefix(n.Prefix, ":")
+}
+
+func (n *Node) isPathParamMatcher(method HttpMethod) bool {
+	if !n.isPathParam() || n.Data == nil || len(n.Data) == 0 {
+		return false
+	}
+
+	data, ok := n.Data[method]
+
+	if !ok || data == nil {
+		return false
+	}
+
+	if _, ok := (*data).matcher()[*n.ParamKey]; !ok {
+		return false
+	}
+
+	return true
+}
+
+func (n *Node) matchesPathParamMatcher(segment string, method HttpMethod) bool {
+	data, ok := n.Data[method]
+
+	pattern, ok := (*data).matcher()[*n.ParamKey]
+
+	if !ok {
+		return false
+	}
+
+	match, err := regexp.MatchString(pattern, segment)
+
+	if err != nil {
+		return false
+	}
+
+	return match
+}
+
 func NewNode(prefix string) *Node {
-	return &Node{Prefix: prefix}
+	node := &Node{Prefix: prefix}
+	if node.isPathParam() {
+		paramKey := strings.TrimPrefix(node.Prefix, ":")
+		node.ParamKey = &paramKey
+	}
+	return node
 }
 
 type RadixTree struct {
@@ -108,4 +156,49 @@ func (rt *RadixTree) Nodes() []*Node {
 		nodes = append(nodes, node)
 	})
 	return nodes
+}
+
+// Search searches the appropriate Node for insertion.
+func (rt *RadixTree) Search(path string, method HttpMethod) *Routable {
+
+	// Similarly to FindInsertionNode it will traverse the tree by path segments, but it will not create
+	// intermediate nodes when missing.
+
+	segments := strings.Split(path, "/")
+	curNode := rt.root
+
+	for len(segments) > 0 && curNode != nil {
+
+		segment := segments[0]
+		segments = segments[1:]
+
+		var segmentNode *Node
+
+		for _, child := range curNode.Children {
+			// Here we follow the path segments when one of the following cases is fulfilled
+			// - the current node matches the segment (following the path)
+			// - the current node is a path parameter (we can continue to the next)
+			// - the current node is a path parameter with matcher (we can continue to the next if matching)
+			if child.Prefix == segment ||
+				(child.isPathParam() && !child.isPathParamMatcher(method)) ||
+				(child.isPathParamMatcher(method) && child.matchesPathParamMatcher(segment, method)) {
+				segmentNode = child
+				break
+			}
+		}
+
+		curNode = segmentNode
+	}
+
+	if curNode == nil || curNode.Data == nil {
+		return nil
+	}
+
+	data, ok := curNode.Data[method]
+
+	if !ok {
+		return nil
+	}
+
+	return data
 }

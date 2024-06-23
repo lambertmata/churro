@@ -1,7 +1,6 @@
 package churro
 
 import (
-	"fmt"
 	"log/slog"
 	"testing"
 )
@@ -19,6 +18,10 @@ func (n *TestNode) method() HttpMethod {
 	return n.Method
 }
 
+func (n *TestNode) matcher() map[string]string {
+	return map[string]string{"any": `\d+`}
+}
+
 func (n *TestNode) String() string {
 	return n.Path
 }
@@ -31,24 +34,37 @@ func TestNewRadixTree(t *testing.T) {
 	n4 := &TestNode{"api/users/:id/items", "GET"}
 	n5 := &TestNode{"api/items", "GET"}
 	n6 := &TestNode{"api/items", "POST"}
+	n7 := &TestNode{"api/invoices/:any", "GET"}
 	tree.Insert(n1)
 	tree.Insert(n2)
 	tree.Insert(n3)
 	tree.Insert(n4)
 	tree.Insert(n5)
 	tree.Insert(n6)
+	tree.Insert(n7)
 
 	inserted := tree.Nodes()
 
-	if len(inserted) != 4 {
+	if len(inserted) != 7 {
 		t.Errorf("Inserted wrong number of nodes: got %d, want 6", len(inserted))
 	}
 
-	for _, n := range inserted {
-		for method, route := range n.Data {
-			slog.Info(fmt.Sprintf("%s %s", method, (*route).path()))
-		}
+	s1 := tree.Search("api/users/:id", "GET")
 
+	if s1 != nil {
+		slog.Info((*s1).path())
+	}
+
+	s2 := tree.Search("api/users/1/items", "GET")
+
+	if s2 != nil {
+		slog.Info((*s2).path())
+	}
+
+	s3 := tree.Search("api/invoices/111", "GET")
+
+	if s3 != nil {
+		slog.Info((*s3).path())
 	}
 
 }
