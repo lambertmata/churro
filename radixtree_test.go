@@ -49,19 +49,19 @@ func TestNewRadixTree(t *testing.T) {
 		t.Errorf("Inserted wrong number of nodes: got %d, want 6", len(inserted))
 	}
 
-	s1 := tree.Search("api/users/:id", "GET")
+	s1, _ := tree.Search("api/users/:id", "GET")
 
 	if s1 != nil {
 		slog.Info((*s1).path())
 	}
 
-	s2 := tree.Search("api/users/1/items", "GET")
+	s2, _ := tree.Search("api/users/1/items", "GET")
 
 	if s2 != nil {
 		slog.Info((*s2).path())
 	}
 
-	s3 := tree.Search("api/invoices/111", "GET")
+	s3, _ := tree.Search("api/invoices/111", "GET")
 
 	if s3 != nil {
 		slog.Info((*s3).path())

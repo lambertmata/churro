@@ -1,9 +1,26 @@
 package churro
 
 import (
+	"errors"
 	"regexp"
 	"strings"
 )
+
+// ErrNodeNotFound is returned by [RadixTree.Search] and [RadixTree.FindInsertionNode] a node containing a Route is
+// not found, meaning the Route does not exist.
+var ErrNodeNotFound = errors.New("route node not found")
+
+// ErrNodeRouteUndefined is returned by [RadixTree.Search] when a node is found, but [Node.Route] is not set in the
+// returned node.
+var ErrNodeRouteUndefined = errors.New("route is undefined")
+
+// ErrRoutedMethodNotImplemented is returned by [RadixTree.Search] when a route node is found but [Node.Route] does not
+// not implement the requested method.
+var ErrRoutedMethodNotImplemented = errors.New("route method not implemented")
+
+// ErrPathParamMatcherNotDefined is returned by [RadixTree.Search] when a route node is found but [Node.Route] but the
+// path param matcher is not defined.
+var ErrPathParamMatcherNotDefined = errors.New("path param matcher not found")
 
 type Routable interface {
 	path() string
@@ -12,14 +29,14 @@ type Routable interface {
 }
 
 type Node struct {
-	Data     map[HttpMethod]*Routable
+	Route    map[HttpMethod]*Routable
 	Prefix   string
 	Children []*Node
 	ParamKey *string
 }
 
 func (n *Node) isLeaf() bool {
-	return n.Data != nil
+	return n.Route != nil
 }
 
 func (n *Node) isPathParam() bool {
@@ -27,39 +44,32 @@ func (n *Node) isPathParam() bool {
 }
 
 func (n *Node) isPathParamMatcher(method HttpMethod) bool {
-	if !n.isPathParam() || n.Data == nil || len(n.Data) == 0 {
+
+	if !n.isPathParam() || n.Route == nil || len(n.Route) == 0 {
 		return false
 	}
 
-	data, ok := n.Data[method]
+	data, dataForMethodFound := n.Route[method]
 
-	if !ok || data == nil {
+	if !dataForMethodFound || data == nil {
 		return false
 	}
 
-	if _, ok := (*data).matcher()[*n.ParamKey]; !ok {
-		return false
-	}
+	_, matcherForParamFound := (*data).matcher()[*n.ParamKey]
 
-	return true
+	return matcherForParamFound
 }
 
-func (n *Node) matchesPathParamMatcher(segment string, method HttpMethod) bool {
-	data, ok := n.Data[method]
+func (n *Node) matchesPathParamMatcher(segment string, method HttpMethod) (bool, error) {
+	data, ok := n.Route[method]
 
 	pattern, ok := (*data).matcher()[*n.ParamKey]
 
 	if !ok {
-		return false
+		return false, ErrPathParamMatcherNotDefined
 	}
 
-	match, err := regexp.MatchString(pattern, segment)
-
-	if err != nil {
-		return false
-	}
-
-	return match
+	return regexp.MatchString(pattern, segment)
 }
 
 func NewNode(prefix string) *Node {
@@ -126,11 +136,11 @@ func (rt *RadixTree) Insert(data Routable) {
 		return
 	}
 
-	if leaf.Data == nil {
-		leaf.Data = make(map[HttpMethod]*Routable)
+	if leaf.Route == nil {
+		leaf.Route = make(map[HttpMethod]*Routable)
 	}
 
-	leaf.Data[data.method()] = &data
+	leaf.Route[data.method()] = &data
 }
 
 func (rt *RadixTree) Traverse(callback func(node *Node)) {
@@ -159,7 +169,7 @@ func (rt *RadixTree) Nodes() []*Node {
 }
 
 // Search searches the appropriate Node for insertion.
-func (rt *RadixTree) Search(path string, method HttpMethod) *Routable {
+func (rt *RadixTree) Search(path string, method HttpMethod) (*Routable, error) {
 
 	// Similarly to FindInsertionNode it will traverse the tree by path segments, but it will not create
 	// intermediate nodes when missing.
@@ -176,29 +186,50 @@ func (rt *RadixTree) Search(path string, method HttpMethod) *Routable {
 
 		for _, child := range curNode.Children {
 			// Here we follow the path segments when one of the following cases is fulfilled
-			// - the current node matches the segment (following the path)
-			// - the current node is a path parameter (we can continue to the next)
-			// - the current node is a path parameter with matcher (we can continue to the next if matching)
-			if child.Prefix == segment ||
-				(child.isPathParam() && !child.isPathParamMatcher(method)) ||
-				(child.isPathParamMatcher(method) && child.matchesPathParamMatcher(segment, method)) {
+			// a) the current node matches the segment (following the path)
+			// b) the current node is a path parameter (we can continue to the next)
+			// c) the current node is a path parameter with matcher (we can continue to the next if matching)
+
+			if child.Prefix == segment { // a)
 				segmentNode = child
 				break
+
+			} else if child.isPathParam() && !child.isPathParamMatcher(method) { // b)
+				segmentNode = child
+				break
+
+			} else if child.isPathParam() && child.isPathParamMatcher(method) { // c)
+				matches, err := child.matchesPathParamMatcher(segment, method)
+				if err != nil {
+					return nil, err
+				}
+				if matches {
+					segmentNode = child
+					break
+				}
 			}
+
 		}
 
 		curNode = segmentNode
 	}
 
-	if curNode == nil || curNode.Data == nil {
-		return nil
+	// Nothing found
+	if curNode == nil {
+		return nil, ErrNodeNotFound
 	}
 
-	data, ok := curNode.Data[method]
+	// Node was found, but Route is not defined (should not happen)
+	if curNode.Route == nil {
+		return nil, ErrNodeRouteUndefined
+	}
 
+	data, ok := curNode.Route[method]
+
+	// Route was found, but the supplied method is not implemented
 	if !ok {
-		return nil
+		return nil, ErrRoutedMethodNotImplemented
 	}
 
-	return data
+	return data, nil
 }
