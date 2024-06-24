@@ -1,13 +1,14 @@
 package churro
 
 import (
-	"log/slog"
+	"errors"
 	"testing"
 )
 
 type TestNode struct {
-	Path   string
-	Method HttpMethod
+	Path    string
+	Method  HttpMethod
+	Matcher map[string]string
 }
 
 func (n *TestNode) path() string {
@@ -19,7 +20,7 @@ func (n *TestNode) method() HttpMethod {
 }
 
 func (n *TestNode) matcher() map[string]string {
-	return map[string]string{"any": `\d+`}
+	return n.Matcher
 }
 
 func (n *TestNode) String() string {
@@ -27,44 +28,57 @@ func (n *TestNode) String() string {
 }
 
 func TestNewRadixTree(t *testing.T) {
+
 	tree := NewRadixTree()
-	n1 := &TestNode{"api/users", "GET"}
-	n2 := &TestNode{"api/users/:id", "GET"}
-	n3 := &TestNode{"api/users/:id", "DELETE"}
-	n4 := &TestNode{"api/users/:id/items", "GET"}
-	n5 := &TestNode{"api/items", "GET"}
-	n6 := &TestNode{"api/items", "POST"}
-	n7 := &TestNode{"api/invoices/:any", "GET"}
-	tree.Insert(n1)
-	tree.Insert(n2)
-	tree.Insert(n3)
-	tree.Insert(n4)
-	tree.Insert(n5)
-	tree.Insert(n6)
-	tree.Insert(n7)
 
-	inserted := tree.Nodes()
-
-	if len(inserted) != 7 {
-		t.Errorf("Inserted wrong number of nodes: got %d, want 6", len(inserted))
+	table := []*TestNode{
+		{"api/users", "GET", nil},
+		{"api/users/:id", "GET", nil},
+		{"api/users/:id", "DELETE", nil},
+		{"api/users/:id/items", "GET", nil},
+		{"api/items", "GET", nil},
+		{"api/items", "POST", nil},
+		{"api/invoices/:any", "GET", map[string]string{"any": `\w+`}},
 	}
 
-	s1, _ := tree.Search("api/users/:id", "GET")
-
-	if s1 != nil {
-		slog.Info((*s1).path())
+	for _, node := range table {
+		tree.Insert(node)
 	}
 
-	s2, _ := tree.Search("api/users/1/items", "GET")
+	inserted := tree.Routes()
 
-	if s2 != nil {
-		slog.Info((*s2).path())
+	if len(inserted) != len(table) {
+		t.Errorf("Inserted wrong number of nodes: got %d, want %d", len(table), len(inserted))
 	}
 
-	s3, _ := tree.Search("api/invoices/111", "GET")
+	if _, err := tree.Search("api/users/1", "GET"); err != nil {
+		t.Errorf("Search failed, wanted %s got nil: %v", table[0].Path, err)
+	}
 
-	if s3 != nil {
-		slog.Info((*s3).path())
+	if _, err := tree.Search("api/users/1/items", "GET"); err != nil {
+		t.Errorf("Search failed, wanted %s got nil: %v", table[3].Path, err)
+	}
+
+	if _, err := tree.Search("api/invoices/111", "GET"); err != nil {
+		t.Errorf("Search failed, wanted %s got nil: %v", table[4].Path, err)
+	}
+
+	if _, err := tree.Search("api/invoices/abc", "GET"); err != nil {
+		t.Errorf("Search error, wanted %s got nil: %v", table[6].Path, err)
+	}
+
+	if _, err := tree.Search("api/invoices", "GET"); !errors.Is(err, ErrNodeRouteUndefined) {
+		t.Errorf("Search error, wanted: %v got: %v", ErrNodeRouteUndefined, err)
+	}
+
+	tree.Remove(table[0])
+
+	if len(tree.Routes()) != len(table)-1 {
+		t.Errorf("Wrong number of nodes after removal: got %d, want %d", len(table)-1, len(tree.Routes()))
+	}
+
+	if _, err := tree.Search("api/users", "GET"); !errors.Is(err, ErrNodeRouteUndefined) {
+		t.Errorf("Search error, wanted: %v got: %v", ErrNodeRouteUndefined, err)
 	}
 
 }

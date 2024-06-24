@@ -6,12 +6,12 @@ import (
 	"strings"
 )
 
-// ErrNodeNotFound is returned by [RadixTree.Search] and [RadixTree.FindInsertionNode] a node containing a Route is
-// not found, meaning the Route does not exist.
+// ErrNodeNotFound is returned by [RadixTree.Search] and [RadixTree.FindInsertionNode] when a node to the given path
+// does not exist. If nil does not mean the Route is found as the node could be just a linking node without an actual
+// route. For example a Route defined with /api/item/tags when looking for /api/items would still return a node.
 var ErrNodeNotFound = errors.New("route node not found")
 
-// ErrNodeRouteUndefined is returned by [RadixTree.Search] when a node is found, but [Node.Route] is not set in the
-// returned node.
+// ErrNodeRouteUndefined is returned by [RadixTree.Search] when a node is found, but [Node.Route] route was not defined.
 var ErrNodeRouteUndefined = errors.New("route is undefined")
 
 // ErrRoutedMethodNotImplemented is returned by [RadixTree.Search] when a route node is found but [Node.Route] does not
@@ -33,6 +33,7 @@ type Node struct {
 	Prefix   string
 	Children []*Node
 	ParamKey *string
+	Parent   *Node
 }
 
 func (n *Node) isLeaf() bool {
@@ -118,6 +119,7 @@ func (rt *RadixTree) FindInsertionNode(routable Routable) *Node {
 		// No node was there, so we have to create a new one and link it the to current node.
 		if segmentNode == nil {
 			segmentNode = NewNode(segment)
+			segmentNode.Parent = curNode
 			curNode.Children = append(curNode.Children, segmentNode)
 		}
 
@@ -143,6 +145,31 @@ func (rt *RadixTree) Insert(data Routable) {
 	leaf.Route[data.method()] = &data
 }
 
+func (rt *RadixTree) Remove(data Routable) (bool, error) {
+	node, err := rt.search(data.path(), data.method())
+	if err != nil {
+		return false, err
+	}
+	// If the route exists we have two cases
+	// a) the node is a leaf and can be removed from the tree
+	// b) the node is not a leaf, we just remove the route data
+	if len((*node).Children) > 0 {
+
+		delete(node.Route, data.method())
+
+	} else {
+		siblings := (*node.Parent).Children
+		for i, child := range siblings {
+			if child == node {
+				siblings = append(siblings[:i], siblings[i+1:]...)
+				break
+			}
+		}
+	}
+
+	return true, nil
+}
+
 func (rt *RadixTree) Traverse(callback func(node *Node)) {
 
 	stack := []*Node{rt.root}
@@ -160,16 +187,18 @@ func (rt *RadixTree) Traverse(callback func(node *Node)) {
 	}
 }
 
-func (rt *RadixTree) Nodes() []*Node {
-	var nodes []*Node
+func (rt *RadixTree) Routes() []*Routable {
+	var routes []*Routable
 	rt.Traverse(func(node *Node) {
-		nodes = append(nodes, node)
+		for _, route := range node.Route {
+			routes = append(routes, route)
+		}
 	})
-	return nodes
+	return routes
 }
 
 // Search searches the appropriate Node for insertion.
-func (rt *RadixTree) Search(path string, method HttpMethod) (*Routable, error) {
+func (rt *RadixTree) search(path string, method HttpMethod) (*Node, error) {
 
 	// Similarly to FindInsertionNode it will traverse the tree by path segments, but it will not create
 	// intermediate nodes when missing.
@@ -191,22 +220,28 @@ func (rt *RadixTree) Search(path string, method HttpMethod) (*Routable, error) {
 			// c) the current node is a path parameter with matcher (we can continue to the next if matching)
 
 			if child.Prefix == segment { // a)
+
 				segmentNode = child
 				break
 
 			} else if child.isPathParam() && !child.isPathParamMatcher(method) { // b)
+
 				segmentNode = child
 				break
 
 			} else if child.isPathParam() && child.isPathParamMatcher(method) { // c)
+
 				matches, err := child.matchesPathParamMatcher(segment, method)
+
 				if err != nil {
 					return nil, err
 				}
+
 				if matches {
 					segmentNode = child
 					break
 				}
+
 			}
 
 		}
@@ -219,12 +254,24 @@ func (rt *RadixTree) Search(path string, method HttpMethod) (*Routable, error) {
 		return nil, ErrNodeNotFound
 	}
 
+	return curNode, nil
+}
+
+// Search searches the appropriate Node for insertion.
+func (rt *RadixTree) Search(path string, method HttpMethod) (*Routable, error) {
+
+	node, err := rt.search(path, method)
+
+	if err != nil {
+		return nil, err
+	}
+
 	// Node was found, but Route is not defined (should not happen)
-	if curNode.Route == nil {
+	if node.Route == nil {
 		return nil, ErrNodeRouteUndefined
 	}
 
-	data, ok := curNode.Route[method]
+	data, ok := node.Route[method]
 
 	// Route was found, but the supplied method is not implemented
 	if !ok {
