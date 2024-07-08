@@ -2,82 +2,78 @@ package churro
 
 import (
 	"errors"
+	"net/http"
 	"testing"
 )
-
-type TestNode struct {
-	Path    string
-	Method  HttpMethod
-	Matcher map[string]string
-}
-
-func (n *TestNode) path() string {
-	return n.Path
-}
-
-func (n *TestNode) method() HttpMethod {
-	return n.Method
-}
-
-func (n *TestNode) matcher() map[string]string {
-	return n.Matcher
-}
-
-func (n *TestNode) String() string {
-	return n.Path
-}
 
 func TestNewRadixTree(t *testing.T) {
 
 	tree := NewRadixTree()
 
-	table := []*TestNode{
-		{"api/users", "GET", nil},
-		{"api/users/:id", "GET", nil},
-		{"api/users/:id", "DELETE", nil},
-		{"api/users/:id/items", "GET", nil},
-		{"api/items", "GET", nil},
-		{"api/items", "POST", nil},
-		{"api/invoices/:any", "GET", map[string]string{"any": `\w+`}},
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!"))
+	})
+
+	routes := []*Route{
+		NewRoute("GET", "/", handler),
+		NewRoute("GET", "api/users", handler),
+		NewRoute("GET", "api/users/:id", handler),
+		NewRoute("DELETE", "api/users/:id", handler),
+		NewRoute("GET", "api/users/:id/items", handler),
+		NewRoute("GET", "api/items", handler),
+		NewRoute("POST", "api/items", handler),
+		NewRoute("GET", "api/invoices/:any", handler).Matches(":any", `\w+`),
 	}
 
-	for _, node := range table {
-		tree.Insert(node)
+	for _, route := range routes {
+		tree.AddRoute(route.RouteHandler())
 	}
 
 	inserted := tree.Routes()
 
-	if len(inserted) != len(table) {
-		t.Errorf("Inserted wrong number of nodes: got %d, want %d", len(table), len(inserted))
+	if len(inserted) != len(routes) {
+		t.Errorf("Inserted wrong number of nodes: got %d, want %d", len(inserted), len(routes))
 	}
 
-	if _, err := tree.Search("api/users/1", "GET"); err != nil {
-		t.Errorf("Search failed, wanted %s got nil: %v", table[0].Path, err)
+	table := []struct {
+		path        string
+		method      HttpMethod
+		expectedErr error
+	}{
+		{"api/users/1", Get, nil},
+		{"/api/users/1", Get, nil},
+		{"/ws/channel/1", Get, ErrNodeNotFound},
+		{"ws/channel/1", Get, ErrNodeNotFound},
+		{"api/users/1/items", Get, nil},
+		{"/api/users/1/items", Get, nil},
+		{"api/invoices/111", Get, nil},
+		{"/api/invoices/111", Get, nil},
+		{"api/invoices/abc", Get, nil},
+		{"/api/invoices/abc", Get, nil},
+		{"/api/invoices/abc?active=true", Get, nil},
+		{"api/invoices", Get, ErrNodeNotFound},
+		{"api/users", Post, ErrRoutedMethodNotImplemented},
+		{"/api/users", Post, ErrRoutedMethodNotImplemented},
+		{"/", Get, nil},
+		{"/", Post, ErrRoutedMethodNotImplemented},
 	}
 
-	if _, err := tree.Search("api/users/1/items", "GET"); err != nil {
-		t.Errorf("Search failed, wanted %s got nil: %v", table[3].Path, err)
+	for _, row := range table {
+		_, err := tree.SearchPath(row.path, row.method)
+		if !errors.Is(err, row.expectedErr) {
+			t.Errorf("Wrong search result: got %v, want %v", err, row.expectedErr)
+		}
 	}
 
-	if _, err := tree.Search("api/invoices/111", "GET"); err != nil {
-		t.Errorf("Search failed, wanted %s got nil: %v", table[4].Path, err)
+	tree.RemoveRoute(routes[0].Method, routes[0].fullPath)
+
+	inserted = tree.Routes()
+
+	if len(tree.Routes()) != len(routes)-1 {
+		t.Errorf("Wrong number of nodes after removal: got %d, want %d", len(routes)-1, len(tree.Routes()))
 	}
 
-	if _, err := tree.Search("api/invoices/abc", "GET"); err != nil {
-		t.Errorf("Search error, wanted %s got nil: %v", table[6].Path, err)
-	}
-
-	if _, err := tree.Search("api/invoices", "GET"); !errors.Is(err, ErrNodeRouteUndefined) {
-		t.Errorf("Search error, wanted: %v got: %v", ErrNodeRouteUndefined, err)
-	}
-
-	tree.Remove(table[0])
-
-	if len(tree.Routes()) != len(table)-1 {
-		t.Errorf("Wrong number of nodes after removal: got %d, want %d", len(table)-1, len(tree.Routes()))
-	}
-
-	if _, err := tree.Search("api/users", "GET"); !errors.Is(err, ErrNodeRouteUndefined) {
+	if _, err := tree.SearchPath("api/users", "GET"); err != nil {
 		t.Errorf("Search error, wanted: %v got: %v", ErrNodeRouteUndefined, err)
 	}
 

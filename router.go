@@ -26,35 +26,70 @@ type GroupCloser interface {
 	Middlewares(middleware ...Middleware) GroupCloser
 }
 
+// Router is used mainly to build routes.
 type Router struct {
 	routes []*Route
-
-	mux Mux
-
+	mux    Mux
 	// children contains child Router(s) when a Router is a parentGroup
 	children []*Router
-
 	// prefix is used when a Router is a Router parentGroup and has an optional prefix
 	prefix string
-
-	// middleware router level middlewares. Will be applied to all route children and router children.
-	middleware []Middleware
-
+	// fullPrefix is computed
+	fullPrefix string
 	// parentGroup is the parent Router holding the Router, when used in a parentGroup. Is nil in root router.
 	parentGroup *Router
 }
 
 type Mux interface {
-	AddRoute(route *Route)
-	RemoveRoute(route *Route)
+	AddRoute(route *RouteHandler)
+	RemoveRoute(method HttpMethod, path string)
+	Match(method HttpMethod, path string) (*RouteHandler, []Middleware, error)
+	AddMiddleware(method HttpMethod, path string, middleware ...Middleware) error
+	AddRouterMiddleware(path string, middleware ...Middleware) error
+}
+
+type SearchResult interface {
+	Handler() http.Handler
+	PathParamVal(key string) string
 }
 
 func NewRouter() *Router {
-	return &Router{}
+	return &Router{
+		mux: NewRadixTree(),
+	}
+}
+
+func UpdateRouterPrefixes(router *Router) {
+	curNode := router
+
+	var fullPrefix string
+
+	for curNode != nil {
+		fullPrefix = path.Join(curNode.prefix, fullPrefix)
+		curNode = curNode.parentGroup
+	}
+
+	router.fullPrefix = fullPrefix
+}
+
+func UpdateRouteFullPaths(route *Route) {
+	//router := route.router
+	curNode := route.router
+
+	var fullPrefix string
+
+	for curNode != nil {
+		fullPrefix = path.Join(curNode.prefix, fullPrefix)
+		curNode = curNode.parentGroup
+	}
+
+	route.fullPath = path.Join(fullPrefix, route.path)
 }
 
 // adjustRoutePath adjusts the Route path to include prefixes from parent groups
 func (r *Router) adjustRoutePath(route *Route) {
+
+	r.mux.RemoveRoute(route.Method, route.fullPath)
 
 	// Here we walk up the tree until parent is nil
 	curRouter := route.router
@@ -66,21 +101,26 @@ func (r *Router) adjustRoutePath(route *Route) {
 		curRouter = curRouter.parentGroup
 	}
 
-	route.FullPath = path.Join(prefixPath, route.Path)
+	r.fullPrefix = prefixPath
+	route.fullPath = path.Join("/", prefixPath, route.path)
+
+	r.mux.AddRoute(route.RouteHandler())
 }
 
 // adjustRoutesPaths adjusts all the Router routes
 func (r *Router) adjustRoutesPaths() {
 	routes := r.Routes()
 	for i := range r.Routes() {
+		UpdateRouteFullPaths(routes[i])
 		r.adjustRoutePath(routes[i])
 	}
 }
 
 func (r *Router) AddRoute(route *Route) {
 	route.router = r
-	r.adjustRoutePath(route)
 	r.routes = append(r.routes, route)
+	UpdateRouteFullPaths(route)
+	r.mux.AddRoute(route.RouteHandler())
 }
 
 func (r *Router) Request(method HttpMethod, path string, handler http.HandlerFunc) *Route {
@@ -134,7 +174,7 @@ func (r *Router) AddGroup(gRouter *Router) {
 
 // Group creates a new sub Router.
 func (r *Router) Group(f func(gRouter *Router)) GroupCloser {
-	groupRouter := NewRouter()
+	groupRouter := &Router{mux: r.mux}
 	r.AddGroup(groupRouter)
 	f(groupRouter)
 	return groupRouter
@@ -143,12 +183,15 @@ func (r *Router) Group(f func(gRouter *Router)) GroupCloser {
 // Prefix sets the current Route prefix. All routes defined in sub Router(s) will be prefixed.
 func (r *Router) Prefix(prefix string) {
 	r.prefix = prefix
+
 	// After setting the prefix, we need to compute all the new prefixed paths of the Route(s)
+	UpdateRouterPrefixes(r)
 	r.adjustRoutesPaths()
 }
 
 func (r *Router) Middlewares(middleware ...Middleware) GroupCloser {
-	r.middleware = append(r.middleware, middleware...)
+	//r.middlewares = append(r.middlewares, middleware...)
+	r.mux.AddRouterMiddleware(r.fullPrefix, middleware...)
 	return r
 }
 
@@ -182,28 +225,27 @@ func (r *Router) Routes() []*Route {
 	return routes
 }
 
-func (r *Router) GetRoutMiddlewares(route *Route) []Middleware {
-	curRouter := route.router
-	middlewares := route.middlewares
+// applyMiddlewares takes and [http.Handler] and runs all the given middlewares.
+func (r *Router) applyMiddlewares(handler http.Handler, middlewares []Middleware) http.Handler {
 
-	for curRouter != nil {
-		// Prepend the parent middlewares
-		middlewares = append(curRouter.middleware, middlewares...)
-		curRouter = curRouter.parentGroup
-	}
-
-	return middlewares
-}
-
-func (r *Router) applyRouteMiddlewares(route *Route) {
-
-	// Applies the middlewares starting from the router root up to the enclosing router middlewares. The applies the
-	// route middlewares
-	middlewares := r.GetRoutMiddlewares(route)
-	wrappedHandler := route.handler
+	requestHandler := handler
 
 	for _, middleware := range middlewares {
-		wrappedHandler = middleware(wrappedHandler)
+		requestHandler = middleware(requestHandler)
 	}
+
+	return requestHandler
+}
+
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+
+	routeHandler, middlewares, err := r.mux.Match(HttpMethod(req.Method), req.URL.Path)
+
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	r.applyMiddlewares(routeHandler.Handler, middlewares).ServeHTTP(w, req)
 
 }

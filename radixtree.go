@@ -2,13 +2,15 @@ package churro
 
 import (
 	"errors"
+	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 )
 
 // ErrNodeNotFound is returned by [RadixTree.Search] and [RadixTree.FindInsertionNode] when a node to the given path
 // does not exist. If nil does not mean the Route is found as the node could be just a linking node without an actual
-// route. For example a Route defined with /api/item/tags when looking for /api/items would still return a node.
+// route. For examples a Route defined with /api/item/tags when looking for /api/items would still return a node.
 var ErrNodeNotFound = errors.New("route node not found")
 
 // ErrNodeRouteUndefined is returned by [RadixTree.Search] when a node is found, but [Node.Route] route was not defined.
@@ -22,22 +24,27 @@ var ErrRoutedMethodNotImplemented = errors.New("route method not implemented")
 // path param matcher is not defined.
 var ErrPathParamMatcherNotDefined = errors.New("path param matcher not found")
 
-type Routable interface {
-	path() string
-	method() HttpMethod
-	matcher() map[string]string
+type RouteHandler struct {
+	Path        string
+	Method      HttpMethod
+	Matcher     map[string]string
+	Middlewares []Middleware
+	Handler     http.Handler
+	// Node is the Node to which the route handler is attached to
+	Node *Node
 }
 
 type Node struct {
-	Route    map[HttpMethod]*Routable
-	Prefix   string
-	Children []*Node
-	ParamKey *string
-	Parent   *Node
+	RouteHandlers map[HttpMethod]*RouteHandler
+	Middleware    []Middleware
+	Prefix        string
+	Children      []*Node
+	ParamKey      *string
+	Parent        *Node
 }
 
 func (n *Node) isLeaf() bool {
-	return n.Route != nil
+	return n.RouteHandlers != nil
 }
 
 func (n *Node) isPathParam() bool {
@@ -46,25 +53,25 @@ func (n *Node) isPathParam() bool {
 
 func (n *Node) isPathParamMatcher(method HttpMethod) bool {
 
-	if !n.isPathParam() || n.Route == nil || len(n.Route) == 0 {
+	if !n.isPathParam() || n.RouteHandlers == nil || len(n.RouteHandlers) == 0 {
 		return false
 	}
 
-	data, dataForMethodFound := n.Route[method]
+	data, dataForMethodFound := n.RouteHandlers[method]
 
 	if !dataForMethodFound || data == nil {
 		return false
 	}
 
-	_, matcherForParamFound := (*data).matcher()[*n.ParamKey]
+	_, matcherForParamFound := (*data).Matcher[*n.ParamKey]
 
 	return matcherForParamFound
 }
 
 func (n *Node) matchesPathParamMatcher(segment string, method HttpMethod) (bool, error) {
-	data, ok := n.Route[method]
+	data, ok := n.RouteHandlers[method]
 
-	pattern, ok := (*data).matcher()[*n.ParamKey]
+	pattern, ok := (*data).Matcher[*n.ParamKey]
 
 	if !ok {
 		return false, ErrPathParamMatcherNotDefined
@@ -87,50 +94,22 @@ type RadixTree struct {
 }
 
 func NewRadixTree() *RadixTree {
-	root := &Node{Prefix: "/"}
-	return &RadixTree{root: root}
+	return &RadixTree{
+		root: NewNode("/"),
+	}
 }
 
 // FindInsertionNode searches the appropriate Node for insertion.
-func (rt *RadixTree) FindInsertionNode(routable Routable) *Node {
+func (rt *RadixTree) FindInsertionNode(routable *RouteHandler) *Node {
 
-	// Splitting the path into segments.
-	segments := strings.Split(routable.path(), "/")
-	curNode := rt.root
+	node, _ := rt.WalkSegments(routable.Path, true, func(node *Node, segment string) bool {
+		return node.Prefix == segment
+	})
 
-	// Starting from the root, descends the tree following the path segments, creating intermediary segment nodes when
-	// missing, and returns the node where to attach the data to.
-	for len(segments) > 0 {
-
-		// On each iteration the first path segment is dequeued, until we have none.
-		segment := segments[0]
-		segments = segments[1:]
-
-		var segmentNode *Node
-
-		// Check if the current segment is at the current tree level.
-		for _, child := range curNode.Children {
-			if child.Prefix == segment {
-				segmentNode = child
-				break
-			}
-		}
-
-		// No node was there, so we have to create a new one and link it the to current node.
-		if segmentNode == nil {
-			segmentNode = NewNode(segment)
-			segmentNode.Parent = curNode
-			curNode.Children = append(curNode.Children, segmentNode)
-		}
-
-		// We can proceed by inspecting the segment node found
-		curNode = segmentNode
-	}
-
-	return curNode
+	return node
 }
 
-func (rt *RadixTree) Insert(data Routable) {
+func (rt *RadixTree) Insert(data *RouteHandler) {
 
 	leaf := rt.FindInsertionNode(data)
 
@@ -138,25 +117,29 @@ func (rt *RadixTree) Insert(data Routable) {
 		return
 	}
 
-	if leaf.Route == nil {
-		leaf.Route = make(map[HttpMethod]*Routable)
+	if leaf.RouteHandlers == nil {
+		leaf.RouteHandlers = make(map[HttpMethod]*RouteHandler)
 	}
 
-	leaf.Route[data.method()] = &data
+	data.Node = leaf
+	leaf.RouteHandlers[data.Method] = data
 }
 
-func (rt *RadixTree) Remove(data Routable) (bool, error) {
-	node, err := rt.search(data.path(), data.method())
+func (rt *RadixTree) RemoveRouteHandler(method HttpMethod, path string) (bool, error) {
+	routeHandler, err := rt.SearchPath(path, method)
+
 	if err != nil {
 		return false, err
 	}
+
 	// If the route exists we have two cases
 	// a) the node is a leaf and can be removed from the tree
 	// b) the node is not a leaf, we just remove the route data
+
+	node := routeHandler.Node
+
 	if len((*node).Children) > 0 {
-
-		delete(node.Route, data.method())
-
+		delete(node.RouteHandlers, method)
 	} else {
 		siblings := (*node.Parent).Children
 		for i, child := range siblings {
@@ -182,29 +165,33 @@ func (rt *RadixTree) Traverse(callback func(node *Node)) {
 		if curNode.isLeaf() {
 			callback(curNode)
 		}
-
 		stack = append(stack, curNode.Children...)
 	}
 }
 
-func (rt *RadixTree) Routes() []*Routable {
-	var routes []*Routable
+func (rt *RadixTree) Routes() []*RouteHandler {
+	var routes []*RouteHandler
 	rt.Traverse(func(node *Node) {
-		for _, route := range node.Route {
+		for _, route := range node.RouteHandlers {
 			routes = append(routes, route)
 		}
 	})
 	return routes
 }
 
-// Search searches the appropriate Node for insertion.
-func (rt *RadixTree) search(path string, method HttpMethod) (*Node, error) {
+// WalkSegments traverses all the nodes.
+func (rt *RadixTree) WalkSegments(path string, createNodes bool, callback func(node *Node, segment string) bool) (*Node, error) {
 
 	// Similarly to FindInsertionNode it will traverse the tree by path segments, but it will not create
 	// intermediate nodes when missing.
 
-	segments := strings.Split(path, "/")
 	curNode := rt.root
+
+	if path == "/" {
+		return curNode, nil
+	}
+
+	segments := SplitString(path, "/")
 
 	for len(segments) > 0 && curNode != nil {
 
@@ -219,37 +206,24 @@ func (rt *RadixTree) search(path string, method HttpMethod) (*Node, error) {
 			// b) the current node is a path parameter (we can continue to the next)
 			// c) the current node is a path parameter with matcher (we can continue to the next if matching)
 
-			if child.Prefix == segment { // a)
-
-				segmentNode = child
-				break
-
-			} else if child.isPathParam() && !child.isPathParamMatcher(method) { // b)
-
-				segmentNode = child
-				break
-
-			} else if child.isPathParam() && child.isPathParamMatcher(method) { // c)
-
-				matches, err := child.matchesPathParamMatcher(segment, method)
-
-				if err != nil {
-					return nil, err
-				}
-
-				if matches {
-					segmentNode = child
-					break
-				}
-
+			if !callback(child, segment) {
+				//return nil, ErrNodeNotFound
+				continue
 			}
 
+			segmentNode = child
+		}
+
+		// No node was there, so we have to create a new one and link it the to current node.segmentNode
+		if createNodes && segmentNode == nil {
+			segmentNode = NewNode(segment)
+			segmentNode.Parent = curNode
+			curNode.Children = append(curNode.Children, segmentNode)
 		}
 
 		curNode = segmentNode
 	}
 
-	// Nothing found
 	if curNode == nil {
 		return nil, ErrNodeNotFound
 	}
@@ -257,26 +231,107 @@ func (rt *RadixTree) search(path string, method HttpMethod) (*Node, error) {
 	return curNode, nil
 }
 
-// Search searches the appropriate Node for insertion.
-func (rt *RadixTree) Search(path string, method HttpMethod) (*Routable, error) {
+// SearchPath searches the appropriate Node for insertion.
+func (rt *RadixTree) SearchPath(path string, method HttpMethod) (*RouteHandler, error) {
 
-	node, err := rt.search(path, method)
+	// Similarly to FindInsertionNode it will traverse the tree by path segments, but it will not create
+	// intermediate nodes when missing.
+
+	handlerNode, err := rt.WalkSegments(path, false, func(node *Node, segment string) bool {
+
+		if node.Prefix == segment { // a)
+
+			return true
+
+		} else if node.isPathParam() && !node.isPathParamMatcher(method) { // b)
+
+			return true
+
+		} else if node.isPathParam() && node.isPathParamMatcher(method) { // c)
+
+			matches, err := node.matchesPathParamMatcher(segment, method)
+
+			if err != nil {
+				return false
+			}
+
+			if matches {
+				return true
+			}
+
+		}
+
+		return false
+	})
+
+	if err != nil || handlerNode.RouteHandlers == nil {
+		return nil, fmt.Errorf("search path %s failed %w", path, ErrNodeNotFound)
+	}
+
+	routeHandler, ok := handlerNode.RouteHandlers[method]
+
+	if !ok {
+		return nil, fmt.Errorf("search method %s for path %s failed %w", method, path, ErrRoutedMethodNotImplemented)
+	}
+
+	return routeHandler, nil
+}
+
+func (rt *RadixTree) GetRouteMiddlewares(routeHandler *RouteHandler) []Middleware {
+
+	curNode := routeHandler.Node
+	middlewares := routeHandler.Middlewares
+
+	for curNode != nil {
+		middlewaresCount := len(curNode.Middleware)
+		for i := middlewaresCount - 1; i >= 0; i-- {
+			middlewares = append(middlewares, curNode.Middleware[i])
+		}
+		curNode = curNode.Parent
+	}
+
+	return middlewares
+}
+
+// Match finds the matched route handler and middlewares for the given method and path.
+func (rt *RadixTree) Match(method HttpMethod, path string) (*RouteHandler, []Middleware, error) {
+
+	routeHandler, err := rt.SearchPath(path, method)
 
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("failed to find matches for %s %s %w ", method, path, err)
 	}
 
-	// Node was found, but Route is not defined (should not happen)
-	if node.Route == nil {
-		return nil, ErrNodeRouteUndefined
+	return routeHandler, rt.GetRouteMiddlewares(routeHandler), nil
+}
+
+func (rt *RadixTree) AddRoute(routeHandler *RouteHandler) {
+	rt.Insert(routeHandler)
+}
+
+func (rt *RadixTree) RemoveRoute(method HttpMethod, path string) {
+	rt.RemoveRouteHandler(method, path)
+}
+
+func (rt *RadixTree) AddMiddleware(method HttpMethod, path string, middleware ...Middleware) error {
+	routeHandler, err := rt.SearchPath(path, method)
+	if err != nil {
+		return fmt.Errorf("set route middleware failed %w", err)
+	}
+	routeHandler.Middlewares = append(routeHandler.Middlewares, middleware...)
+	return nil
+}
+
+func (rt *RadixTree) AddRouterMiddleware(path string, middleware ...Middleware) error {
+
+	node, err := rt.WalkSegments(path, false, func(node *Node, segment string) bool {
+		return node.Prefix == segment
+	})
+
+	if err != nil {
+		return fmt.Errorf("set router middleware failed %w", err)
 	}
 
-	data, ok := node.Route[method]
-
-	// Route was found, but the supplied method is not implemented
-	if !ok {
-		return nil, ErrRoutedMethodNotImplemented
-	}
-
-	return data, nil
+	node.Middleware = append(node.Middleware, middleware...)
+	return nil
 }

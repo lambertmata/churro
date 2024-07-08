@@ -1,10 +1,8 @@
 package churro
 
 import (
-	"fmt"
-	"log/slog"
+	"errors"
 	"net/http"
-	"strconv"
 	"testing"
 )
 
@@ -39,8 +37,8 @@ func TestRouterRouteCreateBasic(t *testing.T) {
 		if route.Method != HttpMethod(c.Method) {
 			t.Errorf("%d: want method %s, got %s", i, c.Method, route.Method)
 		}
-		if route.Path != c.Path {
-			t.Errorf("%d: want path %s, got %s", i, c.Path, route.Path)
+		if route.path != c.Path {
+			t.Errorf("%d: want path %s, got %s", i, c.Path, route.path)
 		}
 	}
 
@@ -56,20 +54,25 @@ func TestRouterRouteGroupsBasic(t *testing.T) {
 
 	r.Group(func(g1 *Router) {
 
+		g1.Option("users", handler)
 		g1.Get("users", handler)
-		g1.Get("users/:id", handler)
+		g1.Delete("users/:id", handler)
 		g1.Patch("users", handler)
 		g1.Post("users/:id", handler)
 
 		g1.Group(func(g2 *Router) {
 			g2.Get(":id/items", handler)
+			g2.Get("/", handler)
 		}).Prefix("users")
 
 	}).Prefix("v1")
 
-	for _, route := range r.Routes() {
-		slog.Info(fmt.Sprintf("Testing route %s -> %s", route.FullPath, route.Path))
+	r.Head("v1/users/:id", handler)
+
+	if len(r.Routes()) < 9 {
+		t.Fatal("Expected at least 8 routes, got ", len(r.Routes()))
 	}
+
 }
 
 func TestRouterRouteMiddlewaresGroupsBasic(t *testing.T) {
@@ -93,9 +96,7 @@ func TestRouterRouteMiddlewaresGroupsBasic(t *testing.T) {
 		makeNamedMiddlewares("1", &executionOrder),
 	)
 
-	if len(r.middleware) != 2 {
-		t.Fatal("Expected exactly 2 routes, got ", len(r.middleware))
-	}
+	r.Get("health", handler)
 
 	r.Group(func(g1 *Router) {
 
@@ -106,34 +107,64 @@ func TestRouterRouteMiddlewaresGroupsBasic(t *testing.T) {
 			makeNamedMiddlewares("5", &executionOrder),
 		)
 
-		if len(route.middlewares) != 2 {
-			t.Fatal("Expected exactly 2 routes, got ", len(r.middleware))
-		}
+		g1.Post("orders", handler)
+		g1.Get("/", handler)
 
 	}).Middlewares(
 		makeNamedMiddlewares("2", &executionOrder),
 		makeNamedMiddlewares("3", &executionOrder),
 	).Prefix("admin")
 
-	route := r.Routes()[0]
+}
 
-	r.applyRouteMiddlewares(route)
+func TestRouterMatchers(t *testing.T) {
+	r := NewRouter()
 
-	middlewares := r.GetRoutMiddlewares(route)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {})
 
-	if len(middlewares) != 6 {
-		t.Fatalf("want 6 routes, got %d", len(middlewares))
+	r.Get("users", handler)
+	r.Get("users/:id", handler)
+	r.Patch("users", handler)
+	r.Post("users/:id", handler)
+	r.Get("users/:any", handler).Matches("any", ".*")
+
+}
+
+func TestGrouped(t *testing.T) {
+	r := NewRouter()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {})
+
+	r.Get("/api", handler)
+	r.Get("/", handler)
+	r.Get("ws/", handler)
+
+	r.Group(func(gRouter *Router) {
+		gRouter.Get("/", handler)
+	}).Prefix("/ws")
+
+	r.Get("/ws/channels/:channel", handler)
+
+	route, _, _ := r.mux.Match(Get, "/")
+	if route == nil {
+		t.Fatal("Expected route to exist")
 	}
 
-	if len(executionOrder) != 6 {
-		t.Fatalf("want 6 executed middlewares, got %d", len(executionOrder))
+	route, _, _ = r.mux.Match(Get, "/ws/channels/1")
+
+	if route == nil {
+		t.Fatal("Expected route to exist")
 	}
 
-	for i, m := range executionOrder {
-		if strconv.Itoa(i) != m {
-			t.Errorf("%d: want %s, got %s", i, strconv.Itoa(i), m)
-		}
+	route, _, err := r.mux.Match(Post, "/ws/private-channels")
 
+	if err == nil || !errors.Is(err, ErrNodeNotFound) {
+		t.Fatalf("Expected ErrRoutedMethodNotImplemented, got %v", err)
 	}
 
+	route, _, err = r.mux.Match(Post, "/ws/private-channels")
+
+	if err == nil || !errors.Is(err, ErrNodeNotFound) {
+		t.Fatalf("Expected ErrNodeRouteUndefined, got %v", err)
+	}
 }

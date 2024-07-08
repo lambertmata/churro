@@ -5,30 +5,73 @@ import (
 	"testing"
 )
 
-func TestCreateRouteBasic(t *testing.T) {
-	m1 := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			next.ServeHTTP(w, r)
-		})
-	}
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestNewRoutePrefix(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	route := NewRoute(Get, "", handler)
-	if route == nil {
-		t.Error("route is nil")
+	table := []struct {
+		path       string
+		wantedPath string
+	}{
+		{"/", "/"},
+		{"api", "/api"},
+		{"/api/v1", "/api/v1"},
+		{"//api/v2", "/api/v2"},
+		{"", "/"},
 	}
 
-	if route.Path != "/" {
-		t.Errorf("route.Path is \"\"; want \\ ")
+	for _, row := range table {
+		route := NewRoute(Get, row.path, h)
+		if route.fullPath != row.wantedPath {
+			t.Errorf("wanted %s, got %s", row.wantedPath, route.fullPath)
+		}
 	}
 
-	route.Middlewares(m1)
+}
 
-	if len(route.middlewares) != 1 {
-		t.Fatalf("route.Middlewares is %d; want 1", len(route.middlewares))
+func TestRouteHttpMethods(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	table := []struct {
+		method       HttpMethod
+		wantedMethod string
+	}{
+		{Get, "GET"},
+		{Post, "POST"},
+		{Put, "PUT"},
+		{Patch, "PATCH"},
+		{Head, "HEAD"},
+		{Option, "OPTIONS"},
+		{Connect, "CONNECT"},
+		{Trace, "TRACE"},
+	}
+
+	for _, row := range table {
+		route := NewRoute(row.method, "/", h)
+		if string(route.Method) != row.wantedMethod {
+			t.Errorf("wanted %s, got %s", row.wantedMethod, route.Method)
+		}
+	}
+}
+
+func TestDefineParamMatchers(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	route := NewRoute(Get, "/users/:id", h)
+
+	if route.Matchers != nil {
+		t.Errorf("New route initial route.Matchers = %v, want nil", route.Matchers)
+	}
+
+	route.Matches(":id", `\w+`)
+
+	if route.Matchers == nil {
+		t.Errorf("New route initial route.Matchers = %v, want not nil", route.Matchers)
 	}
 
 }
