@@ -48,11 +48,6 @@ type Mux interface {
 	AddRouterMiddleware(path string, middleware ...Middleware) error
 }
 
-type SearchResult interface {
-	Handler() http.Handler
-	PathParamVal(key string) string
-}
-
 func NewRouter() *Router {
 	return &Router{
 		mux: NewRadixTree(),
@@ -73,7 +68,6 @@ func UpdateRouterPrefixes(router *Router) {
 }
 
 func UpdateRouteFullPaths(route *Route) {
-	//router := route.router
 	curNode := route.router
 
 	var fullPrefix string
@@ -86,33 +80,12 @@ func UpdateRouteFullPaths(route *Route) {
 	route.fullPath = path.Join(fullPrefix, route.path)
 }
 
-// adjustRoutePath adjusts the Route path to include prefixes from parent groups
-func (r *Router) adjustRoutePath(route *Route) {
-
-	r.mux.RemoveRoute(route.Method, route.fullPath)
-
-	// Here we walk up the tree until parent is nil
-	curRouter := route.router
-
-	var prefixPath string
-
-	for curRouter != nil {
-		prefixPath = path.Join(curRouter.prefix, prefixPath)
-		curRouter = curRouter.parentGroup
-	}
-
-	r.fullPrefix = prefixPath
-	route.fullPath = path.Join("/", prefixPath, route.path)
-
-	r.mux.AddRoute(route.RouteHandler())
-}
-
-// adjustRoutesPaths adjusts all the Router routes
-func (r *Router) adjustRoutesPaths() {
-	routes := r.Routes()
-	for i := range r.Routes() {
-		UpdateRouteFullPaths(routes[i])
-		r.adjustRoutePath(routes[i])
+// UpdateRoutesPaths adjusts all the Router routes to include prefixes from parent groups
+func (r *Router) UpdateRoutesPaths() {
+	for _, route := range r.Routes() {
+		UpdateRouteFullPaths(route)
+		r.mux.RemoveRoute(route.Method, route.fullPath)
+		r.mux.AddRoute(route.RouteHandler())
 	}
 }
 
@@ -180,13 +153,12 @@ func (r *Router) Group(f func(gRouter *Router)) GroupCloser {
 	return groupRouter
 }
 
-// Prefix sets the current Route prefix. All routes defined in sub Router(s) will be prefixed.
+// Prefix sets the current Router prefix. All routes defined in sub Router(s) will be prefixed.
 func (r *Router) Prefix(prefix string) {
 	r.prefix = prefix
-
-	// After setting the prefix, we need to compute all the new prefixed paths of the Route(s)
 	UpdateRouterPrefixes(r)
-	r.adjustRoutesPaths()
+	// After setting the prefix, we need to compute all the new prefixed paths of the Route(s)
+	r.UpdateRoutesPaths()
 }
 
 func (r *Router) Middlewares(middleware ...Middleware) GroupCloser {
@@ -201,40 +173,29 @@ func (r *Router) Routes() []*Route {
 
 	// Here we traverse the router routes using DFS approach. First we take the current route routes
 	// then the children routers routes and so on.
-
 	// we initialize a stack with the current router
 	routersStack := []*Router{r}
 
 	for len(routersStack) > 0 {
-
 		// Pop a router from the stack (get and remove from slice)
 		curRouter := routersStack[len(routersStack)-1]
 		routersStack = routersStack[:len(routersStack)-1]
-
 		// Push child routers if any
 		if curRouter.children != nil {
 			routersStack = append(routersStack, curRouter.children...)
 		}
-
-		// Take our routes
-		for _, route := range curRouter.routes {
-			routes = append(routes, route)
-		}
+		// Take our routes {
+		routes = append(routes, curRouter.routes...)
 	}
-
 	return routes
 }
 
 // applyMiddlewares takes and [http.Handler] and runs all the given middlewares.
 func (r *Router) applyMiddlewares(handler http.Handler, middlewares []Middleware) http.Handler {
-
-	requestHandler := handler
-
 	for _, middleware := range middlewares {
-		requestHandler = middleware(requestHandler)
+		handler = middleware(handler)
 	}
-
-	return requestHandler
+	return handler
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {

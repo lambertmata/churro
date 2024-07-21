@@ -240,15 +240,12 @@ func (rt *RadixTree) SearchPath(path string, method HttpMethod) (*RouteHandler, 
 	handlerNode, err := rt.WalkSegments(path, false, func(node *Node, segment string) bool {
 
 		if node.Prefix == segment { // a)
-
 			return true
 
 		} else if node.isPathParam() && !node.isPathParamMatcher(method) { // b)
-
 			return true
 
 		} else if node.isPathParam() && node.isPathParamMatcher(method) { // c)
-
 			matches, err := node.matchesPathParamMatcher(segment, method)
 
 			if err != nil {
@@ -258,7 +255,6 @@ func (rt *RadixTree) SearchPath(path string, method HttpMethod) (*RouteHandler, 
 			if matches {
 				return true
 			}
-
 		}
 
 		return false
