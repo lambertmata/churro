@@ -1,6 +1,7 @@
 package churro
 
 import (
+	"context"
 	"net/http"
 	"path"
 )
@@ -207,6 +208,26 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	r.applyMiddlewares(routeHandler.Handler, middlewares).ServeHTTP(w, req)
+	ctx := context.WithValue(req.Context(), RouterContext{}, routeHandler.ParamValues)
 
+	r.applyMiddlewares(routeHandler.Handler, middlewares).ServeHTTP(w, req.WithContext(ctx))
+
+}
+
+type RouterContext struct{}
+
+func GetPathParams(req *http.Request) map[string]string {
+	if ctx := req.Context().Value(RouterContext{}); ctx != nil {
+		return ctx.(map[string]string)
+	}
+	return nil
+}
+
+func GetPathParam(req *http.Request, name string) string {
+	if params := GetPathParams(req); params != nil {
+		if val, ok := params[name]; ok {
+			return val
+		}
+	}
+	return ""
 }

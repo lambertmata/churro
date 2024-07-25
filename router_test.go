@@ -3,6 +3,7 @@ package churro
 import (
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -167,4 +168,36 @@ func TestGrouped(t *testing.T) {
 	if err == nil || !errors.Is(err, ErrNodeNotFound) {
 		t.Fatalf("Expected ErrNodeRouteUndefined, got %v", err)
 	}
+}
+
+func TestReadPathParams(t *testing.T) {
+	r := NewRouter()
+
+	r.Group(func(g *Router) {
+
+		g.Get("/users/:id", func(w http.ResponseWriter, req *http.Request) {
+			id := GetPathParam(req, "id")
+			if id != "1" {
+				t.Errorf("Expected id to b 1, got none")
+			}
+		})
+
+		g.Get("/users/:user-id/orders/:order-id", func(w http.ResponseWriter, req *http.Request) {
+			if GetPathParam(req, "user-id") != "1" {
+				t.Errorf("Expected id to b 1, got none")
+			}
+			if GetPathParam(req, "order-id") != "100" {
+				t.Errorf("Expected id to b 100, got none")
+			}
+		})
+
+	}).Prefix("/api")
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/users/1", nil)
+	r.ServeHTTP(w, req)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/users/1/orders/100", nil)
+	r.ServeHTTP(w, req)
 }

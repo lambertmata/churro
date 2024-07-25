@@ -31,7 +31,8 @@ type RouteHandler struct {
 	Middlewares []Middleware
 	Handler     http.Handler
 	// Node is the Node to which the route handler is attached to
-	Node *Node
+	Node        *Node
+	ParamValues map[string]string
 }
 
 type Node struct {
@@ -236,6 +237,7 @@ func (rt *RadixTree) SearchPath(path string, method HttpMethod) (*RouteHandler, 
 
 	// Similarly to FindInsertionNode it will traverse the tree by path segments, but it will not create
 	// intermediate nodes when missing.
+	var pathParamValues map[string]string = make(map[string]string)
 
 	handlerNode, err := rt.WalkSegments(path, false, func(node *Node, segment string) bool {
 
@@ -243,6 +245,7 @@ func (rt *RadixTree) SearchPath(path string, method HttpMethod) (*RouteHandler, 
 			return true
 
 		} else if node.isPathParam() && !node.isPathParamMatcher(method) { // b)
+			pathParamValues[strings.TrimLeft(node.Prefix, ":")] = segment
 			return true
 
 		} else if node.isPathParam() && node.isPathParamMatcher(method) { // c)
@@ -253,6 +256,7 @@ func (rt *RadixTree) SearchPath(path string, method HttpMethod) (*RouteHandler, 
 			}
 
 			if matches {
+				pathParamValues[strings.TrimLeft(node.Prefix, ":")] = segment
 				return true
 			}
 		}
@@ -269,6 +273,8 @@ func (rt *RadixTree) SearchPath(path string, method HttpMethod) (*RouteHandler, 
 	if !ok {
 		return nil, fmt.Errorf("search method %s for path %s failed %w", method, path, ErrRoutedMethodNotImplemented)
 	}
+
+	routeHandler.ParamValues = pathParamValues
 
 	return routeHandler, nil
 }
