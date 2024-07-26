@@ -1,9 +1,12 @@
 package churro
 
 import (
+	"churro/middlewares"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -200,4 +203,40 @@ func TestReadPathParams(t *testing.T) {
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/users/1/orders/100", nil)
 	r.ServeHTTP(w, req)
+}
+
+type UserRequest struct {
+	Email    string `json:"name"`
+	Password string `json:"password"`
+}
+
+func (u *UserRequest) Valid() *middlewares.ValidationError {
+	if u.Email != "aa" || u.Password != "aa" {
+		return &middlewares.ValidationError{
+			Message: "",
+			Errors:  map[string]interface{}{"email": "should be aa", "password": "should be aa"},
+		}
+	}
+	return nil
+}
+
+func TestJsonBody(t *testing.T) {
+	r := NewRouter()
+
+	r.Group(func(g *Router) {
+
+		g.Post("/users", func(w http.ResponseWriter, req *http.Request) {}).Middlewares(middlewares.ValidateJson[*UserRequest]())
+
+	}).Prefix("/api")
+
+	w := httptest.NewRecorder()
+	user := UserRequest{}
+	body, _ := json.Marshal(user)
+	req := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(string(body)))
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("Expected status code to be %d, got %d:", http.StatusUnprocessableEntity, w.Code)
+	}
+
 }
