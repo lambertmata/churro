@@ -1,8 +1,8 @@
 package main
 
 import (
-	"churro"
 	"fmt"
+	churro "github.com/lambertmata/churro"
 	"log/slog"
 	"net/http"
 	"time"
