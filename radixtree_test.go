@@ -40,22 +40,22 @@ func TestNewRadixTree(t *testing.T) {
 		method      HttpMethod
 		expectedErr error
 	}{
-		{"api/users/1", Get, nil},
-		{"/api/users/1", Get, nil},
-		{"/ws/channel/1", Get, ErrNodeNotFound},
-		{"ws/channel/1", Get, ErrNodeNotFound},
-		{"api/users/1/items", Get, nil},
-		{"/api/users/1/items", Get, nil},
-		{"api/invoices/111", Get, nil},
-		{"/api/invoices/111", Get, nil},
-		{"api/invoices/abc", Get, nil},
-		{"/api/invoices/abc", Get, nil},
-		{"/api/invoices/abc?active=true", Get, nil},
-		{"api/invoices", Get, ErrNodeNotFound},
-		{"api/users", Post, ErrRoutedMethodNotImplemented},
-		{"/api/users", Post, ErrRoutedMethodNotImplemented},
-		{"/", Get, nil},
-		{"/", Post, ErrRoutedMethodNotImplemented},
+		{"api/users/1", MethodGet, nil},
+		{"/api/users/1", MethodGet, nil},
+		{"/ws/channel/1", MethodGet, ErrNodeNotFound},
+		{"ws/channel/1", MethodGet, ErrNodeNotFound},
+		{"api/users/1/items", MethodGet, nil},
+		{"/api/users/1/items", MethodGet, nil},
+		{"api/invoices/111", MethodGet, nil},
+		{"/api/invoices/111", MethodGet, nil},
+		{"api/invoices/abc", MethodGet, nil},
+		{"/api/invoices/abc", MethodGet, nil},
+		{"/api/invoices/abc?active=true", MethodGet, nil},
+		{"api/invoices", MethodGet, ErrNodeNotFound},
+		{"api/users", MethodPost, ErrRoutedMethodNotImplemented},
+		{"/api/users", MethodPost, ErrRoutedMethodNotImplemented},
+		{"/", MethodGet, nil},
+		{"/", MethodPost, ErrRoutedMethodNotImplemented},
 	}
 
 	for _, row := range table {

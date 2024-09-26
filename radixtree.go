@@ -3,6 +3,7 @@ package churro
 import (
 	"errors"
 	"fmt"
+	"github.com/lambertmata/churro/utils"
 	"net/http"
 	"regexp"
 	"strings"
@@ -192,7 +193,7 @@ func (rt *RadixTree) WalkSegments(path string, createNodes bool, callback func(n
 		return curNode, nil
 	}
 
-	segments := SplitString(path, "/")
+	segments := utils.SplitString(path, "/")
 
 	for len(segments) > 0 && curNode != nil {
 

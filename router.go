@@ -9,15 +9,15 @@ import (
 type HttpMethod string
 
 const (
-	Get     HttpMethod = http.MethodGet
-	Post    HttpMethod = http.MethodPost
-	Put     HttpMethod = http.MethodPut
-	Patch   HttpMethod = http.MethodPatch
-	Delete  HttpMethod = http.MethodDelete
-	Head    HttpMethod = http.MethodHead
-	Option  HttpMethod = http.MethodOptions
-	Connect HttpMethod = http.MethodConnect
-	Trace   HttpMethod = http.MethodTrace
+	MethodGet     HttpMethod = http.MethodGet
+	MethodPost    HttpMethod = http.MethodPost
+	MethodPut     HttpMethod = http.MethodPut
+	MethodPatch   HttpMethod = http.MethodPatch
+	MethodDelete  HttpMethod = http.MethodDelete
+	MethodHead    HttpMethod = http.MethodHead
+	MethodOption  HttpMethod = http.MethodOptions
+	MethodConnect HttpMethod = http.MethodConnect
+	MethodTrace   HttpMethod = http.MethodTrace
 )
 
 type Middleware func(next http.Handler) http.Handler
@@ -101,42 +101,6 @@ func (r *Router) Request(method HttpMethod, path string, handler http.HandlerFun
 	route := NewRoute(method, path, handler)
 	r.AddRoute(route)
 	return route
-}
-
-func (r *Router) Get(path string, handler http.HandlerFunc) *Route {
-	return r.Request(Get, path, handler)
-}
-
-func (r *Router) Post(path string, handler http.HandlerFunc) *Route {
-	return r.Request(Post, path, handler)
-}
-
-func (r *Router) Put(path string, handler http.HandlerFunc) *Route {
-	return r.Request(Put, path, handler)
-}
-
-func (r *Router) Patch(path string, handler http.HandlerFunc) *Route {
-	return r.Request(Patch, path, handler)
-}
-
-func (r *Router) Delete(path string, handler http.HandlerFunc) *Route {
-	return r.Request(Delete, path, handler)
-}
-
-func (r *Router) Connect(path string, handler http.HandlerFunc) *Route {
-	return r.Request(Connect, path, handler)
-}
-
-func (r *Router) Trace(path string, handler http.HandlerFunc) *Route {
-	return r.Request(Trace, path, handler)
-}
-
-func (r *Router) Head(path string, handler http.HandlerFunc) *Route {
-	return r.Request(Head, path, handler)
-}
-
-func (r *Router) Option(path string, handler http.HandlerFunc) *Route {
-	return r.Request(Option, path, handler)
 }
 
 // AddGroup adds the router as a sub Router

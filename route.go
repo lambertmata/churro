@@ -35,7 +35,12 @@ func NewRoute(method HttpMethod, path string, handler http.Handler) *Route {
 		path = "/" + path
 	}
 
-	return &Route{Method: method, path: path, handler: handler, fullPath: path}
+	return &Route{
+		Method:   method,
+		path:     path,
+		handler:  handler,
+		fullPath: path,
+	}
 }
 
 func (r *Route) Middlewares(middlewares ...Middleware) {
