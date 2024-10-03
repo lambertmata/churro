@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/lambertmata/churro/validator"
+	"io"
 	"net/http"
 	"reflect"
 	"strings"
@@ -159,19 +160,28 @@ func ReadValidatedBody[Body any](req *http.Request, body *Body) error {
 			}
 		}
 
-		res := CreateStructFromMapValues[Body](req.Form)
+		for key, _ := range req.MultipartForm.File {
+			file, _, err := req.FormFile(key)
+			if err != nil {
+				continue
+			}
+			contents, err := io.ReadAll(file)
+			req.MultipartForm.Value["image"] = []string{string(contents)}
+		}
+
+		res := CreateStructFromMapValues[Body](req.MultipartForm.Value)
 
 		if err := validator.NewValidator().Validate(res); err != nil {
 			return WrapProblemDetailsError(err)
 		}
 
-		body = &res
+		*body = res
 
 	default:
 		return &ProblemDetailsError{
 			Status: http.StatusBadRequest,
 			Title:  "Bad Request",
-			Detail: "Content type not supported",
+			Detail: "Content type not supported: " + contentType,
 		}
 	}
 
@@ -206,4 +216,25 @@ func ReadValidatedQuery[Query any](req *http.Request, query *Query) error {
 	*query = res
 
 	return WrapProblemDetailsError(validator.NewValidator().Validate(query))
+}
+
+func ReadValidatedPathParams[PathParams any](req *http.Request, pathParams *PathParams) error {
+
+	var res PathParams
+	refQueryType := reflect.TypeOf(res)
+
+	if refQueryType == nil || refQueryType.Kind() != reflect.Struct {
+		return nil
+	}
+
+	pathParamsToValues := make(map[string][]string)
+
+	for key, val := range GetPathParams(req) {
+		pathParamsToValues[key] = []string{val}
+	}
+
+	res = CreateStructFromMapValues[PathParams](pathParamsToValues)
+	*pathParams = res
+
+	return WrapProblemDetailsError(validator.NewValidator().Validate(res))
 }

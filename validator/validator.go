@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/lambertmata/churro/utils"
-	"log/slog"
 	"reflect"
 	"strconv"
 	"strings"
@@ -131,8 +130,6 @@ func (v *Validator) validate(input any, fieldName, rulesString string) error {
 
 	reflectVal := reflect.ValueOf(input)
 
-	slog.Info("validating", "field", fieldName, "rules", rulesString, "input", input, "kind", reflectVal.Kind())
-
 	if reflectVal.Kind() == reflect.Ptr {
 		reflectVal = reflectVal.Elem()
 	}
@@ -167,7 +164,7 @@ func (v *Validator) validate(input any, fieldName, rulesString string) error {
 		}
 
 	default:
-		if IsPrimaryType(reflectVal) && rulesString != "" {
+		if rulesString != "" {
 			if err := v.ValidateWithRules(fieldName, reflectVal, rulesString); err != nil {
 				return err
 			}

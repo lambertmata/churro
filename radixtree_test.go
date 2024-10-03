@@ -17,12 +17,12 @@ func TestNewRadixTree(t *testing.T) {
 	routes := []*Route{
 		NewRoute("GET", "/", handler),
 		NewRoute("GET", "api/users", handler),
-		NewRoute("GET", "api/users/:id", handler),
-		NewRoute("DELETE", "api/users/:id", handler),
-		NewRoute("GET", "api/users/:id/items", handler),
+		NewRoute("GET", "api/users/{id}", handler),
+		NewRoute("DELETE", "api/users/{id}", handler),
+		NewRoute("GET", "api/users/{id}/items", handler),
 		NewRoute("GET", "api/items", handler),
 		NewRoute("POST", "api/items", handler),
-		NewRoute("GET", "api/invoices/:any", handler).Matches(":any", `\w+`),
+		NewRoute("GET", "api/invoices/{any}", handler).Matches("{any}", `\w+`),
 	}
 
 	for _, route := range routes {

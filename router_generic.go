@@ -5,14 +5,24 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"reflect"
 )
 
-type Context[BodyType any, QueryType any, HeadersType any] struct {
-	Req     *http.Request
-	Res     http.ResponseWriter
-	Body    BodyType
-	Query   QueryType
-	Headers HeadersType
+type Context[BodyType, QueryType, HeadersType, PathParamsType any] struct {
+	Req                 *http.Request
+	Res                 http.ResponseWriter
+	ValidatedBody       BodyType
+	ValidatedQuery      QueryType
+	ValidatedHeaders    HeadersType
+	ValidatedPathParams PathParamsType
+}
+
+func (c *Context[BodyType, QueryType, HeadersType, PathParams]) PathParam(name string) string {
+	return GetPathParam(c.Req, name)
+}
+
+func (c *Context[BodyType, QueryType, HeadersType, PathParams]) PathParams() map[string]string {
+	return GetPathParams(c.Req)
 }
 
 type ProblemDetailsError struct {
@@ -28,11 +38,11 @@ func (e *ProblemDetailsError) Error() string {
 	return e.Title
 }
 
-func Request[Body, Query, Headers, Response any](router *Router, method HttpMethod, path string, handler func(ctx *Context[Body, Query, Headers]) (Response, error)) *Route {
+func Request[Body, Query, Headers, Response, PathParams any](router *Router, method HttpMethod, path string, handler func(ctx *Context[Body, Query, Headers, PathParams]) (Response, error)) *Route {
 
 	route := NewRoute(method, path, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 
-		ctx := Context[Body, Query, Headers]{
+		ctx := Context[Body, Query, Headers, PathParams]{
 			Req: req,
 			Res: w,
 		}
@@ -40,25 +50,33 @@ func Request[Body, Query, Headers, Response any](router *Router, method HttpMeth
 
 		var err error
 
-		if headerValidationErr := ReadValidatedHeader(req, &ctx.Headers); headerValidationErr != nil {
+		defer func() {
+			if err != nil && errors.As(err, &problemDetailsError) {
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(problemDetailsError.Status)
+				json.NewEncoder(w).Encode(problemDetailsError)
+				return
+			}
+		}()
 
-			err = headerValidationErr
-
-		} else if bodyValidationErr := ReadValidatedBody(req, &ctx.Body); bodyValidationErr != nil {
-
-			err = bodyValidationErr
-
-		} else if queryValidationErr := ReadValidatedQuery(req, &ctx.Query); queryValidationErr != nil {
-
-			err = queryValidationErr
-
+		if pathParamsValidationErr := ReadValidatedPathParams(req, &ctx.ValidatedPathParams); pathParamsValidationErr != nil {
+			err = pathParamsValidationErr
+			return
 		}
 
-		if err != nil && errors.As(err, &problemDetailsError) {
-			w.Header().Set("Content-Type", "application/problem+json")
-			w.Header().Set("Content-Type", "application/problem+json")
-			w.WriteHeader(problemDetailsError.Status)
-			json.NewEncoder(w).Encode(problemDetailsError)
+		if headerValidationErr := ReadValidatedHeader(req, &ctx.ValidatedHeaders); headerValidationErr != nil {
+			err = headerValidationErr
+			return
+		}
+
+		if bodyValidationErr := ReadValidatedBody(req, &ctx.ValidatedBody); bodyValidationErr != nil {
+			err = bodyValidationErr
+			return
+		}
+
+		if queryValidationErr := ReadValidatedQuery(req, &ctx.ValidatedQuery); queryValidationErr != nil {
+			err = queryValidationErr
 			return
 		}
 
@@ -73,43 +91,49 @@ func Request[Body, Query, Headers, Response any](router *Router, method HttpMeth
 
 	}))
 
+	route.reqType = reflect.TypeOf((*Body)(nil))
+	route.resType = reflect.TypeOf((*Response)(nil))
+	route.headerType = reflect.TypeOf((*Headers)(nil))
+	route.queryType = reflect.TypeOf((*Query)(nil))
+	route.pathParamsType = reflect.TypeOf((*PathParams)(nil))
+
 	router.AddRoute(route)
 
 	return route
 }
 
-func Get[Body, Query, Headers, Response any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers]) (Response, error)) *Route {
+func Get[Body, Query, Headers, Response, PathParams any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers, PathParams]) (Response, error)) *Route {
 	return Request(router, MethodGet, path, handler)
 }
 
-func Put[Body, Query, Headers, Response any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers]) (Response, error)) *Route {
+func Put[Body, Query, Headers, Response, PathParams any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers, PathParams]) (Response, error)) *Route {
 	return Request(router, MethodPut, path, handler)
 }
 
-func Post[Body, Query, Headers, Response any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers]) (Response, error)) *Route {
+func Post[Body, Query, Headers, Response, PathParams any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers, PathParams]) (Response, error)) *Route {
 	return Request(router, MethodPost, path, handler)
 }
 
-func Patch[Body, Query, Headers, Response any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers]) (Response, error)) *Route {
+func Patch[Body, Query, Headers, Response, PathParams any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers, PathParams]) (Response, error)) *Route {
 	return Request(router, MethodPatch, path, handler)
 }
 
-func Delete[Body, Query, Headers, Response any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers]) (Response, error)) *Route {
+func Delete[Body, Query, Headers, Response, PathParams any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers, PathParams]) (Response, error)) *Route {
 	return Request(router, MethodDelete, path, handler)
 }
 
-func Connect[Body, Query, Headers, Response any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers]) (Response, error)) *Route {
+func Connect[Body, Query, Headers, Response, PathParams any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers, PathParams]) (Response, error)) *Route {
 	return Request(router, MethodConnect, path, handler)
 }
 
-func Trace[Body, Query, Headers, Response any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers]) (Response, error)) *Route {
+func Trace[Body, Query, Headers, Response, PathParams any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers, PathParams]) (Response, error)) *Route {
 	return Request(router, MethodTrace, path, handler)
 }
 
-func Head[Body, Query, Headers, Response any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers]) (Response, error)) *Route {
+func Head[Body, Query, Headers, Response, PathParams any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers, PathParams]) (Response, error)) *Route {
 	return Request(router, MethodHead, path, handler)
 }
 
-func Option[Body, Query, Headers, Response any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers]) (Response, error)) *Route {
+func Option[Body, Query, Headers, Response, PathParams any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers, PathParams]) (Response, error)) *Route {
 	return Request(router, MethodOption, path, handler)
 }

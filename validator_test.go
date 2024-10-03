@@ -92,7 +92,7 @@ func TestComplexJSONValidation(t *testing.T) {
 	jsonReq := `
 		{
           "currency": "eur",
-          "coupon_code": "a5382fa9-ca56-4b3f-a77f-37174bd83c9dl",
+          "coupon_code": "a5382fa9-ca56-4b3f-a77f-37174bd83c9d",
 		  "customer": {
 			"name": "John Smith",
 			"email": "johnsmith@example.com"

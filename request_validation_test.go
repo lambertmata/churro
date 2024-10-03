@@ -2,7 +2,6 @@ package churro
 
 import (
 	"errors"
-	"github.com/lambertmata/churro"
 	"testing"
 )
 
@@ -22,7 +21,7 @@ func TestCreateStructFromMapValuesBasic(t *testing.T) {
 		"email":       {"bob@example.com"},
 	}
 
-	userStruct := churro.CreateStructFromMapValues[User](userMap)
+	userStruct := CreateStructFromMapValues[User](userMap)
 
 	if userStruct.Name != "bob" {
 		t.Fatalf("Name should be 'bob' but was %s", userStruct.Name)
@@ -58,7 +57,7 @@ func TestCreateStructFromStructSliceToSoleValue(t *testing.T) {
 		"email":      {"bob@example.com"},
 	}
 
-	userStruct := churro.CreateStructFromMapValues[User](userMap)
+	userStruct := CreateStructFromMapValues[User](userMap)
 
 	if userStruct.Name != "bob" {
 		t.Fatalf("Name should be 'bob' but was %s", userStruct.Name)
@@ -79,22 +78,22 @@ func TestCreateStructFromStructSliceToSoleValue(t *testing.T) {
 
 func TestWrapProblemDetailsError(t *testing.T) {
 
-	err := churro.WrapProblemDetailsError(nil)
+	err := WrapProblemDetailsError(nil)
 
 	if err != nil {
 		t.Fatalf("Error should be nil but was %v", err)
 	}
 
-	err = churro.WrapProblemDetailsError(errors.New("test error"))
+	err = WrapProblemDetailsError(errors.New("test error"))
 
 	if err == nil {
 		t.Fatalf("Error should not be nil but was %v", err)
 	}
 
-	var problemDetailsErr *churro.ProblemDetailsError
+	var problemDetailsErr *ProblemDetailsError
 
 	if !errors.As(err, &problemDetailsErr) {
-		t.Fatalf("Error should be churro.ProblemDetailsError but was %v", err)
+		t.Fatalf("Error should be ProblemDetailsError but was %v", err)
 	} else {
 		problemDetailsErr = nil
 	}

@@ -50,7 +50,11 @@ func (n *Node) isLeaf() bool {
 }
 
 func (n *Node) isPathParam() bool {
-	return strings.HasPrefix(n.Prefix, ":")
+	return strings.HasPrefix(n.Prefix, "{") && strings.HasSuffix(n.Prefix, "}")
+}
+
+func (n *Node) Param() string {
+	return strings.Trim(n.Prefix, "{}")
 }
 
 func (n *Node) isPathParamMatcher(method HttpMethod) bool {
@@ -85,7 +89,7 @@ func (n *Node) matchesPathParamMatcher(segment string, method HttpMethod) (bool,
 func NewNode(prefix string) *Node {
 	node := &Node{Prefix: prefix}
 	if node.isPathParam() {
-		paramKey := strings.TrimPrefix(node.Prefix, ":")
+		paramKey := node.Param()
 		node.ParamKey = &paramKey
 	}
 	return node
@@ -246,7 +250,7 @@ func (rt *RadixTree) SearchPath(path string, method HttpMethod) (*RouteHandler, 
 			return true
 
 		} else if node.isPathParam() && !node.isPathParamMatcher(method) { // b)
-			pathParamValues[strings.TrimLeft(node.Prefix, ":")] = segment
+			pathParamValues[node.Param()] = segment
 			return true
 
 		} else if node.isPathParam() && node.isPathParamMatcher(method) { // c)
@@ -257,7 +261,7 @@ func (rt *RadixTree) SearchPath(path string, method HttpMethod) (*RouteHandler, 
 			}
 
 			if matches {
-				pathParamValues[strings.TrimLeft(node.Prefix, ":")] = segment
+				pathParamValues[node.Param()] = segment
 				return true
 			}
 		}

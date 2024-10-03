@@ -11,7 +11,7 @@ import (
 
 // RequiredRule Value under validation must be set and non-empty.
 func RequiredRule(fieldVal reflect.Value, _ []string) bool {
-	return (fieldVal.Kind() == reflect.Ptr && !fieldVal.IsNil()) || !fieldVal.IsZero()
+	return fieldVal.IsValid() && ((fieldVal.Kind() == reflect.Ptr && !fieldVal.IsNil()) || !fieldVal.IsZero())
 }
 
 // EmailRule Value under validation must be set and non-empty.
