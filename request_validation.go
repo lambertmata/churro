@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/lambertmata/churro/validator"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"reflect"
 	"strings"
@@ -160,16 +161,19 @@ func ReadValidatedBody[Body any](req *http.Request, body *Body) error {
 			}
 		}
 
+		res := CreateStructFromMapValues[Body](req.MultipartForm.Value)
+
 		for key, _ := range req.MultipartForm.File {
+
 			file, _, err := req.FormFile(key)
+
 			if err != nil {
 				continue
 			}
-			contents, err := io.ReadAll(file)
-			req.MultipartForm.Value["image"] = []string{string(contents)}
-		}
 
-		res := CreateStructFromMapValues[Body](req.MultipartForm.Value)
+			FillStructFieldWithFile(&res, key, file)
+
+		}
 
 		if err := validator.NewValidator().Validate(res); err != nil {
 			return WrapProblemDetailsError(err)
@@ -183,6 +187,59 @@ func ReadValidatedBody[Body any](req *http.Request, body *Body) error {
 			Title:  "Bad Request",
 			Detail: "Content type not supported: " + contentType,
 		}
+	}
+
+	return nil
+}
+
+func isByteSlice(field reflect.Value) bool {
+	return field.Kind() == reflect.Slice && field.Kind() == reflect.Uint8
+}
+
+func isIOReader(field reflect.Value) bool {
+	return field.Type().Implements(reflect.TypeOf((*io.Reader)(nil)).Elem())
+}
+
+func FillStructFieldWithFile[Body any](body *Body, field string, file multipart.File) error {
+
+	if body == nil {
+		return errors.New("body is nil")
+	}
+
+	if file == nil {
+		return errors.New("file is nil")
+	}
+
+	bodyRef := reflect.ValueOf(body).Elem()
+
+	outputField := bodyRef.FieldByName(field)
+
+	if !outputField.IsValid() {
+		field = strings.ToUpper(string(field[0])) + field[1:]
+		outputField = bodyRef.FieldByName(field)
+	}
+
+	if !outputField.IsValid() {
+		return fmt.Errorf("field %s is not valid", field)
+	}
+
+	if !outputField.CanSet() {
+		return fmt.Errorf("field %s can not be set", field)
+	}
+
+	if isIOReader(outputField) {
+
+		outputField.Set(reflect.ValueOf(file))
+
+	} else if isByteSlice(outputField) {
+
+		bytes, err := io.ReadAll(file)
+
+		if err != nil {
+			return fmt.Errorf("could not read file for field %s: %w", field, err)
+		}
+
+		outputField.Set(reflect.ValueOf(bytes))
 	}
 
 	return nil

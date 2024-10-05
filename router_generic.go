@@ -3,6 +3,7 @@ package churro
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"reflect"
@@ -36,6 +37,32 @@ type ProblemDetailsError struct {
 
 func (e *ProblemDetailsError) Error() string {
 	return e.Title
+}
+
+// WriteResult writes res to response writer when type is []byte, JSON in all the other cases.
+func WriteResult(w http.ResponseWriter, res any) error {
+
+	refRes := reflect.ValueOf(res)
+
+	if refRes.Kind() == reflect.Ptr {
+		refRes = refRes.Elem()
+	}
+
+	// Special case for byte slices (binary data)
+	if refRes.Kind() == reflect.Slice && refRes.Type().Elem().Kind() == reflect.Uint8 {
+		// Write bytes directly
+		if _, err := w.Write(res.([]byte)); err != nil {
+			return fmt.Errorf("failed to write binary data %w", err)
+		}
+		return nil
+	}
+
+	// For all other types, use JSON encoder
+	if err := json.NewEncoder(w).Encode(res); err != nil {
+		return fmt.Errorf("failed to write json data %w", err)
+	}
+
+	return nil
 }
 
 func Request[Body, Query, Headers, Response, PathParams any](router *Router, method HttpMethod, path string, handler func(ctx *Context[Body, Query, Headers, PathParams]) (Response, error)) *Route {
@@ -87,7 +114,9 @@ func Request[Body, Query, Headers, Response, PathParams any](router *Router, met
 			return
 		}
 
-		json.NewEncoder(w).Encode(res)
+		if err := WriteResult(w, res); err != nil {
+			slog.Error("failed to write response", "err", err.Error())
+		}
 
 	}))
 

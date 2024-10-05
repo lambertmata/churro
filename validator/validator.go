@@ -155,9 +155,15 @@ func (v *Validator) validate(input any, fieldName, rulesString string) error {
 			field := reflectVal.Type().Field(i)
 			rules := field.Tag.Get("validate")
 			curFieldName := field.Name
+
 			if fieldName != "" {
 				curFieldName = fieldName + "." + curFieldName
 			}
+
+			if len(rules) == 0 {
+				continue
+			}
+
 			if err := v.validate(data.Interface(), curFieldName, rules); err != nil {
 				return err
 			}
