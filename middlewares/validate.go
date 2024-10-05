@@ -48,6 +48,6 @@ func ValidateJson[T Validator]() func(next http.Handler) http.Handler {
 	}
 }
 
-func GetValidated[T struct{}](r *http.Request) T {
+func GetValidated[T any](r *http.Request) T {
 	return r.Context().Value(ValidationContext{}).(T)
 }

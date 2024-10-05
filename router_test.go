@@ -1,9 +1,9 @@
 package churro
 
 import (
-	"churro/middlewares"
 	"encoding/json"
 	"errors"
+	"github.com/lambertmata/churro/middlewares"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -149,24 +149,24 @@ func TestGrouped(t *testing.T) {
 
 	r.Get("/ws/channels/:channel", handler)
 
-	route, _, _ := r.mux.Match(Get, "/")
+	route, _, _ := r.mux.Match(MethodGet, "/")
 	if route == nil {
 		t.Fatal("Expected route to exist")
 	}
 
-	route, _, _ = r.mux.Match(Get, "/ws/channels/1")
+	route, _, _ = r.mux.Match(MethodGet, "/ws/channels/1")
 
 	if route == nil {
 		t.Fatal("Expected route to exist")
 	}
 
-	route, _, err := r.mux.Match(Post, "/ws/private-channels")
+	route, _, err := r.mux.Match(MethodPost, "/ws/private-channels")
 
 	if err == nil || !errors.Is(err, ErrNodeNotFound) {
 		t.Fatalf("Expected ErrRoutedMethodNotImplemented, got %v", err)
 	}
 
-	route, _, err = r.mux.Match(Post, "/ws/private-channels")
+	route, _, err = r.mux.Match(MethodPost, "/ws/private-channels")
 
 	if err == nil || !errors.Is(err, ErrNodeNotFound) {
 		t.Fatalf("Expected ErrNodeRouteUndefined, got %v", err)
@@ -225,7 +225,9 @@ func TestJsonBody(t *testing.T) {
 
 	r.Group(func(g *Router) {
 
-		g.Post("/users", func(w http.ResponseWriter, req *http.Request) {}).Middlewares(middlewares.ValidateJson[*UserRequest]())
+		g.Post("/users", func(w http.ResponseWriter, req *http.Request) {
+			_ = middlewares.GetValidated[*UserRequest](req)
+		}).Middlewares(middlewares.ValidateJson[*UserRequest]())
 
 	}).Prefix("/api")
 
@@ -238,5 +240,14 @@ func TestJsonBody(t *testing.T) {
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("Expected status code to be %d, got %d:", http.StatusUnprocessableEntity, w.Code)
 	}
+
+	w = httptest.NewRecorder()
+	user = UserRequest{
+		Email:    "aa",
+		Password: "aa",
+	}
+	body, _ = json.Marshal(user)
+	req = httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(string(body)))
+	r.ServeHTTP(w, req)
 
 }

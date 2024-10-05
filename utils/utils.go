@@ -1,4 +1,4 @@
-package churro
+package utils
 
 import (
 	"slices"
