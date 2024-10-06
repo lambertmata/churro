@@ -44,8 +44,20 @@ func WriteResult(w http.ResponseWriter, res any) error {
 
 	refRes := reflect.ValueOf(res)
 
+	isResponseHandler := false
+
 	if refRes.Kind() == reflect.Ptr {
+		isResponseHandler = refRes.Type().Implements(reflect.TypeOf((*responseTypeProvider)(nil)).Elem())
 		refRes = refRes.Elem()
+	}
+
+	if isResponseHandler {
+		hr := refRes.Interface().(responseTypeProvider)
+		res = hr.Payload()
+
+		for _, m := range hr.Middlewares() {
+			m(w, &res)
+		}
 	}
 
 	// Special case for byte slices (binary data)
@@ -165,4 +177,72 @@ func Head[Body, Query, Headers, Response, PathParams any](router *Router, path s
 
 func Option[Body, Query, Headers, Response, PathParams any](router *Router, path string, handler func(ctx *Context[Body, Query, Headers, PathParams]) (Response, error)) *Route {
 	return Request(router, MethodOption, path, handler)
+}
+
+type ResponseMiddleware func(w http.ResponseWriter, res *any)
+
+type HandlerResponse[ResponseType any] struct {
+	payload     ResponseType
+	middlewares []ResponseMiddleware
+}
+
+func (hr HandlerResponse[ResponseType]) ResponseType() reflect.Type {
+	return reflect.TypeOf(hr.payload)
+}
+
+func (hr HandlerResponse[ResponseType]) Middlewares() []ResponseMiddleware {
+	return hr.middlewares
+}
+
+func (hr HandlerResponse[ResponseType]) Payload() any {
+	return hr.payload
+}
+
+type responseTypeProvider interface {
+	ResponseType() reflect.Type
+	Middlewares() []ResponseMiddleware
+	Payload() any
+}
+
+func WithStatusCode(statusCode int) ResponseMiddleware {
+	return func(w http.ResponseWriter, res *any) {
+		w.WriteHeader(statusCode)
+	}
+}
+
+func WithHeader(name, value string) ResponseMiddleware {
+	return func(w http.ResponseWriter, res *any) {
+		w.Header().Set(name, value)
+	}
+}
+
+func WithContentType(contentType string) ResponseMiddleware {
+	return WithHeader("Content-Type", contentType)
+}
+
+func WithJSONContentType() ResponseMiddleware {
+	return WithHeader("Content-Type", "application/json")
+}
+
+func WithWrappedData() ResponseMiddleware {
+	return func(w http.ResponseWriter, res *any) {
+		wrapped := map[string]any{
+			"data": *res,
+		}
+		*res = wrapped
+	}
+}
+
+func Response[ResponseType any](response ResponseType, err error, middlewares ...ResponseMiddleware) (*HandlerResponse[ResponseType], error) {
+
+	if err != nil {
+		return nil, err
+	}
+
+	r := HandlerResponse[ResponseType]{
+		payload:     response,
+		middlewares: middlewares,
+	}
+
+	return &r, nil
 }
