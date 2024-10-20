@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -61,17 +62,26 @@ func WrapProblemDetailsError(err error) error {
 
 }
 
-// CreateStructFromMapValues populates an Output struct with values from the provided values map.
-// It matches the struct's fields (case-insensitively) with the keys in the values map,
-// filling only those fields that have corresponding keys.
-// Any unmatched fields in the Output struct will be ignored.
-// If a matching field in the Output struct is defined as a non-slice type,
-// only the first element from the corresponding value will be copied.
-func CreateStructFromMapValues[Output any](values map[string][]string) Output {
+func ConvertNumericStringValIntoNumberOutputVal(refInputVal, refOutputVal reflect.Value) error {
+	if refInputVal.Kind() != reflect.String {
+		return nil
+	}
+	switch refOutputVal.Kind() {
+	case reflect.Int:
+		val, _ := strconv.Atoi(refInputVal.String())
+		refOutputVal.SetInt(int64(val))
+		break
+	case reflect.Float64:
+		val, _ := strconv.ParseFloat(refInputVal.String(), 64)
+		refOutputVal.SetFloat(val)
+		break
+	}
+	return nil
+}
 
-	var output Output
+func ReadMapValuesIntoStruct(refStruct *reflect.Value, values map[string][]string) {
 
-	refOutputPtr := reflect.ValueOf(&output).Elem()
+	refOutputPtr := refStruct.Elem()
 
 	for i := 0; i < refOutputPtr.NumField(); i++ {
 
@@ -99,31 +109,41 @@ func CreateStructFromMapValues[Output any](values map[string][]string) Output {
 			toBeAssigned = refInputVal.Index(0)
 		}
 
+		ConvertNumericStringValIntoNumberOutputVal(toBeAssigned, outputField)
+
 		if !toBeAssigned.Type().AssignableTo(outputField.Type()) || !refOutputPtr.CanSet() {
 			continue
 		}
 
 		refOutputPtr.Field(i).Set(toBeAssigned)
 	}
+}
+
+// CreateStructFromMapValues populates an Output struct with values from the provided values map.
+// It matches the struct's fields (case-insensitively) with the keys in the values map,
+// filling only those fields that have corresponding keys.
+// Any unmatched fields in the Output struct will be ignored.
+// If a matching field in the Output struct is defined as a non-slice type,
+// only the first element from the corresponding value will be copied.
+func CreateStructFromMapValues[Output any](values map[string][]string) Output {
+
+	var output Output
+
+	refOutputPtr := reflect.ValueOf(&output).Elem()
+
+	ReadMapValuesIntoStruct(&refOutputPtr, values)
 
 	return output
 }
 
-func ReadValidatedBody[Body any](req *http.Request, body *Body) error {
+func ReadValidatedBody(req *http.Request, bodyRef *reflect.Value) error {
 
 	contentTypeParts := strings.Split(req.Header.Get("Content-Type"), ";")
 	contentType := contentTypeParts[0]
 
-	var sample Body
-	refHeaderType := reflect.TypeOf(sample)
-
-	if refHeaderType == nil || refHeaderType.Kind() != reflect.Struct {
-		return nil
-	}
-
 	switch contentType {
 	case "application/json":
-		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		if err := json.NewDecoder(req.Body).Decode(bodyRef.Interface()); err != nil {
 
 			var typeError *json.UnmarshalTypeError
 
@@ -146,7 +166,7 @@ func ReadValidatedBody[Body any](req *http.Request, body *Body) error {
 
 		}
 
-		if err := validator.NewValidator().Validate(body); err != nil {
+		if err := validator.NewValidator().Validate(bodyRef.Interface()); err != nil {
 			return WrapProblemDetailsError(err)
 		}
 
@@ -161,7 +181,7 @@ func ReadValidatedBody[Body any](req *http.Request, body *Body) error {
 			}
 		}
 
-		res := CreateStructFromMapValues[Body](req.MultipartForm.Value)
+		res := CreateStructFromMapValues[any](req.MultipartForm.Value)
 
 		for key, _ := range req.MultipartForm.File {
 
@@ -179,7 +199,7 @@ func ReadValidatedBody[Body any](req *http.Request, body *Body) error {
 			return WrapProblemDetailsError(err)
 		}
 
-		*body = res
+		bodyRef.Elem().Set(reflect.ValueOf(res))
 
 	default:
 		return &ProblemDetailsError{
@@ -245,42 +265,55 @@ func FillStructFieldWithFile[Body any](body *Body, field string, file multipart.
 	return nil
 }
 
-func ReadValidatedHeader[Header any](req *http.Request, header *Header) error {
+func ReadValidatedHeader(req *http.Request, refHeader *reflect.Value) error {
 
-	var sample Header
-	refHeaderType := reflect.TypeOf(sample)
+	header := refHeader.Interface()
+
+	if header == nil {
+		return nil
+	}
+
+	refHeaderType := refHeader.Type().Elem()
 
 	if refHeaderType == nil || refHeaderType.Kind() != reflect.Struct {
 		return nil
 	}
 
-	res := CreateStructFromMapValues[Header](req.Header)
-	*header = res
+	ReadMapValuesIntoStruct(refHeader, req.Header)
 
 	return WrapProblemDetailsError(validator.NewValidator().Validate(header))
 }
 
-func ReadValidatedQuery[Query any](req *http.Request, query *Query) error {
+// ReadValidatedQuery reads query parameters from req, copy the contents into `refQuery` struct and applies
+// validation using validator.
+func ReadValidatedQuery(req *http.Request, refQuery *reflect.Value) error {
 
-	var res Query
-	refQueryType := reflect.TypeOf(res)
-
-	if refQueryType == nil || refQueryType.Kind() != reflect.Struct {
+	if refQuery == nil || refQuery.Kind() != reflect.Struct {
 		return nil
 	}
 
-	res = CreateStructFromMapValues[Query](req.URL.Query())
-	*query = res
+	query := refQuery.Interface()
 
-	return WrapProblemDetailsError(validator.NewValidator().Validate(query))
+	if query == nil {
+		return nil
+	}
+
+	ReadMapValuesIntoStruct(refQuery, req.URL.Query())
+
+	return WrapProblemDetailsError(validator.NewValidator().Validate(refQuery.Interface()))
 }
 
-func ReadValidatedPathParams[PathParams any](req *http.Request, pathParams *PathParams) error {
+// ReadPathParamsIntoStruct reads path parameters from req, copy the contents into `refPathParams` struct and applies
+// validation using validator.
+func ReadPathParamsIntoStruct(req *http.Request, refPathParams *reflect.Value) error {
 
-	var res PathParams
-	refQueryType := reflect.TypeOf(res)
+	if refPathParams == nil || refPathParams.Kind() != reflect.Struct {
+		return nil
+	}
 
-	if refQueryType == nil || refQueryType.Kind() != reflect.Struct {
+	pathParams := refPathParams.Interface()
+
+	if pathParams == nil {
 		return nil
 	}
 
@@ -290,8 +323,7 @@ func ReadValidatedPathParams[PathParams any](req *http.Request, pathParams *Path
 		pathParamsToValues[key] = []string{val}
 	}
 
-	res = CreateStructFromMapValues[PathParams](pathParamsToValues)
-	*pathParams = res
+	ReadMapValuesIntoStruct(refPathParams, pathParamsToValues)
 
-	return WrapProblemDetailsError(validator.NewValidator().Validate(res))
+	return WrapProblemDetailsError(validator.NewValidator().Validate(pathParams))
 }

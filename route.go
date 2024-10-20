@@ -2,7 +2,6 @@ package churro
 
 import (
 	"net/http"
-	"reflect"
 	"strings"
 )
 
@@ -25,12 +24,6 @@ type Route struct {
 
 	// Matchers contains the path param Matchers defined with [Route.Matches].
 	Matchers map[string]string
-
-	headerType     reflect.Type
-	queryType      reflect.Type
-	reqType        reflect.Type
-	resType        reflect.Type
-	pathParamsType reflect.Type
 }
 
 func NewRoute(method HttpMethod, path string, handler http.Handler) *Route {
