@@ -191,7 +191,8 @@ func ReadValidatedBody(req *http.Request, bodyRef *reflect.Value) error {
 			}
 		}
 
-		err := ReadMapValuesIntoStruct(bodyRef, req.MultipartForm.Value)
+		// TODO: handle error properly
+		_ = ReadMapValuesIntoStruct(bodyRef, req.MultipartForm.Value)
 
 		for key, _ := range req.MultipartForm.File {
 
