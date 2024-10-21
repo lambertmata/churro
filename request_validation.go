@@ -79,7 +79,15 @@ func ConvertNumericStringValIntoNumberOutputVal(refInputVal, refOutputVal reflec
 	return nil
 }
 
-func ReadMapValuesIntoStruct(refStruct *reflect.Value, values map[string][]string) {
+func ReadMapValuesIntoStruct(refStruct *reflect.Value, values map[string][]string) error {
+
+	if refStruct == nil || (refStruct.Kind() != reflect.Pointer || refStruct.Elem().Kind() != reflect.Struct) {
+		return errors.New("ReadMapValuesIntoStruct: refStruct must be a struct")
+	}
+
+	if refStruct.Interface() == nil {
+		return errors.New("ReadMapValuesIntoStruct: refStruct must have a non-nil value")
+	}
 
 	refOutputPtr := refStruct.Elem()
 
@@ -117,6 +125,8 @@ func ReadMapValuesIntoStruct(refStruct *reflect.Value, values map[string][]strin
 
 		refOutputPtr.Field(i).Set(toBeAssigned)
 	}
+
+	return nil
 }
 
 // CreateStructFromMapValues populates an Output struct with values from the provided values map.
@@ -181,7 +191,7 @@ func ReadValidatedBody(req *http.Request, bodyRef *reflect.Value) error {
 			}
 		}
 
-		res := CreateStructFromMapValues[any](req.MultipartForm.Value)
+		err := ReadMapValuesIntoStruct(bodyRef, req.MultipartForm.Value)
 
 		for key, _ := range req.MultipartForm.File {
 
@@ -191,15 +201,13 @@ func ReadValidatedBody(req *http.Request, bodyRef *reflect.Value) error {
 				continue
 			}
 
-			FillStructFieldWithFile(&res, key, file)
+			FillStructFieldWithFile(bodyRef, key, file)
 
 		}
 
-		if err := validator.NewValidator().Validate(res); err != nil {
+		if err := validator.NewValidator().Validate(bodyRef.Elem().Interface()); err != nil {
 			return WrapProblemDetailsError(err)
 		}
-
-		bodyRef.Elem().Set(reflect.ValueOf(res))
 
 	default:
 		return &ProblemDetailsError{
@@ -220,9 +228,9 @@ func isIOReader(field reflect.Value) bool {
 	return field.Type().Implements(reflect.TypeOf((*io.Reader)(nil)).Elem())
 }
 
-func FillStructFieldWithFile[Body any](body *Body, field string, file multipart.File) error {
+func FillStructFieldWithFile(refStruct *reflect.Value, field string, file multipart.File) error {
 
-	if body == nil {
+	if refStruct == nil {
 		return errors.New("body is nil")
 	}
 
@@ -230,13 +238,11 @@ func FillStructFieldWithFile[Body any](body *Body, field string, file multipart.
 		return errors.New("file is nil")
 	}
 
-	bodyRef := reflect.ValueOf(body).Elem()
-
-	outputField := bodyRef.FieldByName(field)
+	outputField := refStruct.Elem().FieldByName(field)
 
 	if !outputField.IsValid() {
 		field = strings.ToUpper(string(field[0])) + field[1:]
-		outputField = bodyRef.FieldByName(field)
+		outputField = refStruct.Elem().FieldByName(field)
 	}
 
 	if !outputField.IsValid() {
@@ -307,16 +313,6 @@ func ReadValidatedQuery(req *http.Request, refQuery *reflect.Value) error {
 // validation using validator.
 func ReadPathParamsIntoStruct(req *http.Request, refPathParams *reflect.Value) error {
 
-	if refPathParams == nil || refPathParams.Kind() != reflect.Struct {
-		return nil
-	}
-
-	pathParams := refPathParams.Interface()
-
-	if pathParams == nil {
-		return nil
-	}
-
 	pathParamsToValues := make(map[string][]string)
 
 	for key, val := range GetPathParams(req) {
@@ -325,5 +321,5 @@ func ReadPathParamsIntoStruct(req *http.Request, refPathParams *reflect.Value) e
 
 	ReadMapValuesIntoStruct(refPathParams, pathParamsToValues)
 
-	return WrapProblemDetailsError(validator.NewValidator().Validate(pathParams))
+	return WrapProblemDetailsError(validator.NewValidator().Validate(refPathParams.Interface()))
 }
