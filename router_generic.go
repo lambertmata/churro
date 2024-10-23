@@ -65,32 +65,36 @@ type RequestHandler[Response any] func() (func(ctx RequestContext) (Response, er
 
 func Request[RequestCtx RequestContext, Response any](router *Router, method HttpMethod, path string, handler func(ctx RequestCtx) (Response, error)) *Route {
 
+	// Here we allow a user to define a typed route handler using one of the available RequestContext types, depending
+	// on which fields are needed.
+	// We have:
+	// - ContextWithBody to have typed Body
+	// - ContextWithBodyAndQuery to have Body and Query typed
+	// - RawContext to type Body, Query, Headers and PathParams
+	// - Context to not type anything at all.
+	// Since I still haven't found a way to do things using interfaces, I have to rely on reflection to derive the types
+	// from the defined context type in the handler parameter.
+	// We sample the parameter by taking the first handler parameter and accessing Body, QueryParams, PathParams and
+	// Headers in Embedded RawContext.
 	route := NewRoute(method, path, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 
-		paramsInType := reflect.TypeOf(handler)
+		// Sampling the type from the handler ctx parameter
+		refCtx := reflector.NewValFromFuncParameter(reflect.ValueOf(handler), 0)
 
-		// Get first parameter which is the ctx
-		paramCtx := paramsInType.In(0).Elem()
-		// Create new ctx
-		refCtx := reflect.New(paramCtx)
-
-		// Get the fields from the embedded rawcontext
-		refCtx = refCtx.Elem()
-		refRawCtx := refCtx.Field(0)
-
+		// From the sampled value of the RequestContext type of the parameter, we get the RawContext and extract all the
+		// fields that we need.
+		refRawCtx := refCtx.Elem().Field(0)
 		refBody := refRawCtx.FieldByName("Body")
 		refQueryParams := refRawCtx.FieldByName("QueryParams")
 		refPathParams := refRawCtx.FieldByName("PathParams")
 		refHeader := refRawCtx.FieldByName("Headers")
 		reflector.InitFields(&refRawCtx)
 
-		var problemDetailsError *ProblemDetailsError
-
 		var err error
 
 		defer func() {
+			var problemDetailsError *ProblemDetailsError
 			if err != nil && errors.As(err, &problemDetailsError) {
-				w.Header().Set("Content-Type", "application/problem+json")
 				w.Header().Set("Content-Type", "application/problem+json")
 				w.WriteHeader(problemDetailsError.Status)
 				json.NewEncoder(w).Encode(problemDetailsError)
@@ -98,24 +102,20 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 			}
 		}()
 
-		if pathParamsValidationErr := ReadPathParamsIntoStruct(req, &refPathParams); pathParamsValidationErr != nil {
+		if pathParamsValidationErr := readPathParams(req, &refPathParams); pathParamsValidationErr != nil {
 			err = pathParamsValidationErr
-			return
 		}
 
-		if headerValidationErr := ReadValidatedHeader(req, &refHeader); headerValidationErr != nil {
-			err = headerValidationErr
-			return
+		if headerValidationErr := readValidatedHeader(req, &refHeader); headerValidationErr != nil {
+			err = errors.Join(headerValidationErr)
 		}
 
-		if bodyValidationErr := ReadValidatedBody(req, &refBody); bodyValidationErr != nil {
-			err = bodyValidationErr
-			return
+		if bodyValidationErr := readValidatedBody(req, &refBody); bodyValidationErr != nil {
+			err = errors.Join(err, bodyValidationErr)
 		}
 
-		if queryValidationErr := ReadValidatedQuery(req, &refQueryParams); queryValidationErr != nil {
-			err = queryValidationErr
-			return
+		if queryValidationErr := readValidatedQuery(req, &refQueryParams); queryValidationErr != nil {
+			err = errors.Join(err, queryValidationErr)
 		}
 
 		refCtx.FieldByName("Res").Set(reflect.ValueOf(w))
