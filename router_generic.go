@@ -99,7 +99,7 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 		refQueryParams := refRawCtx.FieldByName("QueryParams")
 		refPathParams := refRawCtx.FieldByName("PathParams")
 		refHeader := refRawCtx.FieldByName("Headers")
-		reflector.InitFields(&refRawCtx)
+		reflector.InitStructPointerFields(&refRawCtx)
 
 		var err error
 
