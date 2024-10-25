@@ -9,33 +9,32 @@ import (
 	"strings"
 )
 
-func InitFields(refVal *reflect.Value) {
+// InitStructPointerFields initializes nil Pointer fields recursively. Anything else is left untouched.
+func InitStructPointerFields(refStruct *reflect.Value) {
 
-	for i := 0; i < refVal.NumField(); i++ {
+	if refStruct.Kind() == reflect.Ptr && refStruct.Elem().Kind() != reflect.Struct {
+		return
+	}
 
-		rField := refVal.Field(i)
+	// Iterate all the fields
+	for i := 0; i < refStruct.NumField(); i++ {
+		refField := refStruct.Field(i)
 
-		if !rField.CanSet() {
+		// Skip if the field cannot be set or is not a Pointer
+		if !refField.CanSet() || refField.Kind() != reflect.Pointer {
 			continue
 		}
 
-		if rField.Kind() == reflect.Pointer {
+		// If the pointer is nil, initialize it
+		if refField.IsNil() {
+			refField.Set(reflect.New(refField.Type().Elem()))
+			continue
+		}
 
-			rFieldVal := reflect.Zero(rField.Type().Elem())
-
-			if rField.IsNil() {
-				// Initialize the pointer field with a new value of the appropriate type
-				rField.Set(reflect.New(rField.Type().Elem()))
-			}
-
-			if rField.CanSet() {
-				//slog.Info("setting", "field", refVal.Type().Field(i).Name, "val", rFieldVal)
-				rField.Elem().Set(rFieldVal)
-			}
-
-		} else {
-
-			//	rField.Elem().Set(reflect.Zero(rField.Type()))
+		// If the pointer points to a struct, recursively initialize its fields
+		if refField.Elem().Kind() == reflect.Struct {
+			innerVal := refField.Elem()
+			InitStructPointerFields(&innerVal)
 		}
 
 	}
