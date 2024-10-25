@@ -4,12 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/lambertmata/churro/reflector"
 	"github.com/lambertmata/churro/validator"
-	"io"
-	"mime/multipart"
 	"net/http"
 	"reflect"
-	"strconv"
 	"strings"
 )
 
@@ -62,94 +60,15 @@ func WrapProblemDetailsError(err error) error {
 
 }
 
-func ConvertNumericStringValIntoNumberOutputVal(refInputVal, refOutputVal reflect.Value) error {
-	if refInputVal.Kind() != reflect.String {
-		return nil
-	}
-	switch refOutputVal.Kind() {
-	case reflect.Int:
-		val, _ := strconv.Atoi(refInputVal.String())
-		refOutputVal.SetInt(int64(val))
-		break
-	case reflect.Float64:
-		val, _ := strconv.ParseFloat(refInputVal.String(), 64)
-		refOutputVal.SetFloat(val)
-		break
-	}
-	return nil
-}
-
-func ReadMapValuesIntoStruct(refStruct *reflect.Value, values map[string][]string) error {
-
-	if refStruct == nil || (refStruct.Kind() != reflect.Pointer || refStruct.Elem().Kind() != reflect.Struct) {
-		return errors.New("ReadMapValuesIntoStruct: refStruct must be a struct")
-	}
-
-	if refStruct.Interface() == nil {
-		return errors.New("ReadMapValuesIntoStruct: refStruct must have a non-nil value")
-	}
-
-	refOutputPtr := refStruct.Elem()
-
-	for i := 0; i < refOutputPtr.NumField(); i++ {
-
-		outputField := refOutputPtr.Field(i)
-		fieldName := strings.ToLower(refOutputPtr.Type().Field(i).Name)
-
-		if !outputField.IsValid() {
-			continue
-		}
-
-		inputVal, ok := values[fieldName]
-
-		if !ok {
-			continue
-		}
-
-		refInputVal := reflect.ValueOf(inputVal)
-
-		inputIsSlice := refInputVal.Kind() == reflect.Slice || refInputVal.Kind() == reflect.Array
-		outputIsSlice := outputField.Kind() == reflect.Slice || outputField.Kind() == reflect.Array
-
-		toBeAssigned := refInputVal
-
-		if !outputIsSlice && inputIsSlice && refInputVal.Len() > 0 {
-			toBeAssigned = refInputVal.Index(0)
-		}
-
-		ConvertNumericStringValIntoNumberOutputVal(toBeAssigned, outputField)
-
-		if !toBeAssigned.Type().AssignableTo(outputField.Type()) || !refOutputPtr.CanSet() {
-			continue
-		}
-
-		refOutputPtr.Field(i).Set(toBeAssigned)
-	}
-
-	return nil
-}
-
-// CreateStructFromMapValues populates an Output struct with values from the provided values map.
-// It matches the struct's fields (case-insensitively) with the keys in the values map,
-// filling only those fields that have corresponding keys.
-// Any unmatched fields in the Output struct will be ignored.
-// If a matching field in the Output struct is defined as a non-slice type,
-// only the first element from the corresponding value will be copied.
-func CreateStructFromMapValues[Output any](values map[string][]string) Output {
-
-	var output Output
-
-	refOutputPtr := reflect.ValueOf(&output).Elem()
-
-	ReadMapValuesIntoStruct(&refOutputPtr, values)
-
-	return output
-}
-
-func ReadValidatedBody(req *http.Request, bodyRef *reflect.Value) error {
+func readValidatedBody(req *http.Request, bodyRef *reflect.Value) error {
 
 	contentTypeParts := strings.Split(req.Header.Get("Content-Type"), ";")
-	contentType := contentTypeParts[0]
+
+	var contentType string
+
+	if len(contentTypeParts) > 0 {
+		contentType = contentTypeParts[0]
+	}
 
 	switch contentType {
 	case "application/json":
@@ -186,13 +105,19 @@ func ReadValidatedBody(req *http.Request, bodyRef *reflect.Value) error {
 			return &ProblemDetailsError{
 				Status: http.StatusBadRequest,
 				Title:  "Validation error",
-				Detail: "Failed reading multipart form",
+				Detail: "Failed parsing multipart form",
 				Err:    err,
 			}
 		}
 
-		// TODO: handle error properly
-		_ = ReadMapValuesIntoStruct(bodyRef, req.MultipartForm.Value)
+		if err := reflector.ReadStringSlicesMapIntoStruct(bodyRef, req.MultipartForm.Value); err != nil {
+			return &ProblemDetailsError{
+				Status: http.StatusInternalServerError,
+				Title:  "Validation error",
+				Detail: "Failed parsing multipart form",
+				Err:    err,
+			}
+		}
 
 		for key, _ := range req.MultipartForm.File {
 
@@ -202,7 +127,7 @@ func ReadValidatedBody(req *http.Request, bodyRef *reflect.Value) error {
 				continue
 			}
 
-			FillStructFieldWithFile(bodyRef, key, file)
+			err = reflector.FillStructFieldWithReaderBytes(bodyRef, key, file)
 
 		}
 
@@ -221,106 +146,33 @@ func ReadValidatedBody(req *http.Request, bodyRef *reflect.Value) error {
 	return nil
 }
 
-func isByteSlice(field reflect.Value) bool {
-	return field.Kind() == reflect.Slice && field.Kind() == reflect.Uint8
+func readValidatedHeader(req *http.Request, refHeader *reflect.Value) error {
+
+	if err := reflector.ReadStringSlicesMapIntoStruct(refHeader, req.Header); err != nil {
+		return fmt.Errorf("failed reading header values: %w", err)
+	}
+
+	return WrapProblemDetailsError(validator.NewValidator().Validate(refHeader.Interface()))
 }
 
-func isIOReader(field reflect.Value) bool {
-	return field.Type().Implements(reflect.TypeOf((*io.Reader)(nil)).Elem())
-}
-
-func FillStructFieldWithFile(refStruct *reflect.Value, field string, file multipart.File) error {
-
-	if refStruct == nil {
-		return errors.New("body is nil")
-	}
-
-	if file == nil {
-		return errors.New("file is nil")
-	}
-
-	outputField := refStruct.Elem().FieldByName(field)
-
-	if !outputField.IsValid() {
-		field = strings.ToUpper(string(field[0])) + field[1:]
-		outputField = refStruct.Elem().FieldByName(field)
-	}
-
-	if !outputField.IsValid() {
-		return fmt.Errorf("field %s is not valid", field)
-	}
-
-	if !outputField.CanSet() {
-		return fmt.Errorf("field %s can not be set", field)
-	}
-
-	if isIOReader(outputField) {
-
-		outputField.Set(reflect.ValueOf(file))
-
-	} else if isByteSlice(outputField) {
-
-		bytes, err := io.ReadAll(file)
-
-		if err != nil {
-			return fmt.Errorf("could not read file for field %s: %w", field, err)
-		}
-
-		outputField.Set(reflect.ValueOf(bytes))
-	}
-
-	return nil
-}
-
-func ReadValidatedHeader(req *http.Request, refHeader *reflect.Value) error {
-
-	header := refHeader.Interface()
-
-	if header == nil {
-		return nil
-	}
-
-	refHeaderType := refHeader.Type().Elem()
-
-	if refHeaderType == nil || refHeaderType.Kind() != reflect.Struct {
-		return nil
-	}
-
-	ReadMapValuesIntoStruct(refHeader, req.Header)
-
-	return WrapProblemDetailsError(validator.NewValidator().Validate(header))
-}
-
-// ReadValidatedQuery reads query parameters from req, copy the contents into `refQuery` struct and applies
+// readValidatedQuery reads query parameters from req, copy the contents into `refQuery` struct and applies
 // validation using validator.
-func ReadValidatedQuery(req *http.Request, refQuery *reflect.Value) error {
+func readValidatedQuery(req *http.Request, refQuery *reflect.Value) error {
 
-	if refQuery == nil || refQuery.Kind() != reflect.Struct {
-		return nil
+	if err := reflector.ReadStringSlicesMapIntoStruct(refQuery, req.URL.Query()); err != nil {
+		return fmt.Errorf("failed reading query params: %w", err)
 	}
-
-	query := refQuery.Interface()
-
-	if query == nil {
-		return nil
-	}
-
-	ReadMapValuesIntoStruct(refQuery, req.URL.Query())
 
 	return WrapProblemDetailsError(validator.NewValidator().Validate(refQuery.Interface()))
 }
 
-// ReadPathParamsIntoStruct reads path parameters from req, copy the contents into `refPathParams` struct and applies
+// readPathParams reads path parameters from req, copy the contents into `refPathParams` struct and applies
 // validation using validator.
-func ReadPathParamsIntoStruct(req *http.Request, refPathParams *reflect.Value) error {
+func readPathParams(req *http.Request, refPathParams *reflect.Value) error {
 
-	pathParamsToValues := make(map[string][]string)
-
-	for key, val := range GetPathParams(req) {
-		pathParamsToValues[key] = []string{val}
+	if err := reflector.ReadStringMapIntoStruct(refPathParams, GetPathParams(req)); err != nil {
+		return fmt.Errorf("failed reading path params: %w", err)
 	}
-
-	ReadMapValuesIntoStruct(refPathParams, pathParamsToValues)
 
 	return WrapProblemDetailsError(validator.NewValidator().Validate(refPathParams.Interface()))
 }

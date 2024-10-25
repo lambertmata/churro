@@ -63,6 +63,17 @@ func WriteResult(w http.ResponseWriter, res any) error {
 
 type RequestHandler[Response any] func() (func(ctx RequestContext) (Response, error), RequestContext)
 
+// writeProblemDetailsError writes problem details error as a json response if err is ProblemDetailsError
+func writeProblemDetailsError(w http.ResponseWriter, err error) {
+	var problemDetailsError *ProblemDetailsError
+	if err != nil && errors.As(err, &problemDetailsError) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(problemDetailsError.Status)
+		json.NewEncoder(w).Encode(problemDetailsError)
+		return
+	}
+}
+
 func Request[RequestCtx RequestContext, Response any](router *Router, method HttpMethod, path string, handler func(ctx RequestCtx) (Response, error)) *Route {
 
 	// Here we allow a user to define a typed route handler using one of the available RequestContext types, depending
@@ -79,11 +90,11 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 	route := NewRoute(method, path, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 
 		// Sampling the type from the handler ctx parameter
-		refCtx := reflector.NewValFromFuncParameter(reflect.ValueOf(handler), 0)
+		refCtx := reflector.NewValFromFuncParameter(reflect.ValueOf(handler), 0).Elem()
 
 		// From the sampled value of the RequestContext type of the parameter, we get the RawContext and extract all the
 		// fields that we need.
-		refRawCtx := refCtx.Elem().Field(0)
+		refRawCtx := refCtx.Field(0)
 		refBody := refRawCtx.FieldByName("Body")
 		refQueryParams := refRawCtx.FieldByName("QueryParams")
 		refPathParams := refRawCtx.FieldByName("PathParams")
@@ -92,15 +103,8 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 
 		var err error
 
-		defer func() {
-			var problemDetailsError *ProblemDetailsError
-			if err != nil && errors.As(err, &problemDetailsError) {
-				w.Header().Set("Content-Type", "application/problem+json")
-				w.WriteHeader(problemDetailsError.Status)
-				json.NewEncoder(w).Encode(problemDetailsError)
-				return
-			}
-		}()
+		// If the handler returned an ProblemDetailsError, we write the response automatically
+		defer writeProblemDetailsError(w, err)
 
 		if pathParamsValidationErr := readPathParams(req, &refPathParams); pathParamsValidationErr != nil {
 			err = pathParamsValidationErr
