@@ -153,7 +153,13 @@ func (v *Validator) validate(input any, fieldName, rulesString string) error {
 		for i := 0; i < reflectVal.NumField(); i++ {
 			data := reflectVal.Field(i)
 			field := reflectVal.Type().Field(i)
+
+			if !field.IsExported() {
+				continue
+			}
+
 			rules := field.Tag.Get("validate")
+
 			curFieldName := field.Name
 
 			if fieldName != "" {
