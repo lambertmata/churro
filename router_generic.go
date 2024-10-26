@@ -28,14 +28,15 @@ func WriteResult(w http.ResponseWriter, res any) error {
 
 	refRes := reflect.ValueOf(res)
 
-	if refRes.IsNil() {
-		w.WriteHeader(http.StatusNoContent)
-		return errors.New("failed to return nil res")
-	}
-
 	isResponseHandler := false
 
 	if refRes.Kind() == reflect.Ptr {
+
+		if refRes.IsNil() {
+			w.WriteHeader(http.StatusNoContent)
+			return errors.New("failed to return nil res")
+		}
+
 		isResponseHandler = refRes.Type().Implements(reflect.TypeOf((*responseTypeProvider)(nil)).Elem())
 		refRes = refRes.Elem()
 	}
@@ -115,11 +116,8 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 
 		var err error
 
-		// If the handler returned an ProblemDetailsError, we write the response automatically
-		defer writeProblemDetailsError(w, err)
-
 		if pathParamsValidationErr := readPathParams(req, &refPathParams); pathParamsValidationErr != nil {
-			err = pathParamsValidationErr
+			err = errors.Join(pathParamsValidationErr)
 		}
 
 		if headerValidationErr := readValidatedHeader(req, &refHeader); headerValidationErr != nil {
@@ -134,6 +132,12 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 			err = errors.Join(err, queryValidationErr)
 		}
 
+		if err != nil {
+			// If the handler returned an ProblemDetailsError, we write the response automatically
+			writeProblemDetailsError(w, err)
+			return
+		}
+
 		refCtx.FieldByName("Res").Set(reflect.ValueOf(w))
 		refCtx.FieldByName("Req").Set(reflect.ValueOf(req))
 
@@ -142,7 +146,6 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 
 		if err != nil {
 			slog.Error("error", "err", err.Error())
-			return
 		}
 
 		if err := WriteResult(w, res); err != nil {
