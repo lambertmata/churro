@@ -28,6 +28,11 @@ func WriteResult(w http.ResponseWriter, res any) error {
 
 	refRes := reflect.ValueOf(res)
 
+	if refRes.IsNil() {
+		w.WriteHeader(http.StatusNoContent)
+		return errors.New("failed to return nil res")
+	}
+
 	isResponseHandler := false
 
 	if refRes.Kind() == reflect.Ptr {
