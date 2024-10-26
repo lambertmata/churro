@@ -151,27 +151,27 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 	return route
 }
 
-func Get[RequestCtx RequestContext, Response any](router *Router, path string, handler func(ctx RequestCtx) (Response, error)) *Route {
+func Get[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
 	return Request(router, MethodGet, path, handler)
 }
 
-func Put[Response any](router *Router, path string, handler func(ctx RequestContext) (Response, error)) *Route {
+func Put[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
 	return Request(router, MethodPut, path, handler)
 }
 
-func Post[Context RequestContext, Response any](router *Router, path string, handler func(ctx Context) (Response, error)) *Route {
-	return Request[Context](router, MethodPost, path, handler)
+func Post[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
+	return Request(router, MethodPost, path, handler)
 }
 
-func Patch[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx RequestContext) (Response, error)) *Route {
+func Patch[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
 	return Request(router, MethodPatch, path, handler)
 }
 
-func Delete[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx RequestContext) (Response, error)) *Route {
+func Delete[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
 	return Request(router, MethodDelete, path, handler)
 }
 
-func Connect[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx RequestContext) (Response, error)) *Route {
+func Connect[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
 	return Request(router, MethodConnect, path, handler)
 }
 
