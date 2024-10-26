@@ -181,3 +181,7 @@ func NewValFromFuncParameter(refFunc reflect.Value, i int) reflect.Value {
 	// Create new ctx
 	return reflect.New(paramCtx)
 }
+
+func IsAny(refVal reflect.Value) bool {
+	return refVal.Type() == reflect.TypeOf((*interface{})(nil))
+}

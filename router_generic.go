@@ -114,25 +114,40 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 		refPathParams := refRawCtx.FieldByName("PathParams")
 		refHeader := refRawCtx.FieldByName("Headers")
 
+		hasBody := !reflector.IsAny(refBody)
+		hasHeader := !reflector.IsAny(refHeader)
+		hasQueryParams := !reflector.IsAny(refQueryParams)
+		hasPathParams := !reflector.IsAny(refPathParams)
+
 		var err error
 
-		if pathParamsValidationErr := readPathParams(req, &refPathParams); pathParamsValidationErr != nil {
-			err = errors.Join(pathParamsValidationErr)
+		if hasPathParams {
+			if pathParamsValidationErr := readPathParams(req, &refPathParams); pathParamsValidationErr != nil {
+				err = errors.Join(pathParamsValidationErr)
+			}
 		}
 
-		if headerValidationErr := readValidatedHeader(req, &refHeader); headerValidationErr != nil {
-			err = errors.Join(headerValidationErr)
+		if hasHeader {
+			if headerValidationErr := readValidatedHeader(req, &refHeader); headerValidationErr != nil {
+				err = errors.Join(headerValidationErr)
+			}
 		}
 
-		if bodyValidationErr := readValidatedBody(req, &refBody); bodyValidationErr != nil {
-			err = errors.Join(err, bodyValidationErr)
+		if hasBody {
+			if bodyValidationErr := readValidatedBody(req, &refBody); bodyValidationErr != nil {
+				err = errors.Join(err, bodyValidationErr)
+			}
 		}
 
-		if queryValidationErr := readValidatedQuery(req, &refQueryParams); queryValidationErr != nil {
-			err = errors.Join(err, queryValidationErr)
+		if hasQueryParams {
+			if queryValidationErr := readValidatedQuery(req, &refQueryParams); queryValidationErr != nil {
+				err = errors.Join(err, queryValidationErr)
+			}
+
 		}
 
 		if err != nil {
+			slog.Error("req err", "err", err.Error())
 			// If the handler returned an ProblemDetailsError, we write the response automatically
 			writeProblemDetailsError(w, err)
 			return
