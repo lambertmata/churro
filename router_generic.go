@@ -16,7 +16,7 @@ type ProblemDetailsError struct {
 	Title  string   `json:"title"`
 	Detail string   `json:"detail"`
 	Errors []string `json:"errors"`
-	Err    error
+	Err    error    `json:"-"`
 }
 
 func (e *ProblemDetailsError) Error() string {
