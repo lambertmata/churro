@@ -9,35 +9,23 @@ import (
 	"strings"
 )
 
-// InitStructPointerFields initializes nil Pointer fields recursively. Anything else is left untouched.
-func InitStructPointerFields(refStruct *reflect.Value) {
+// InitStructPointerField Initializes a nil pointer field in a struct
+func InitStructPointerField(refVal *reflect.Value, name string) {
 
-	if refStruct.Kind() == reflect.Ptr && refStruct.Elem().Kind() != reflect.Struct {
+	if refVal.Kind() == reflect.Ptr && refVal.Elem().Kind() != reflect.Struct {
 		return
 	}
 
-	// Iterate all the fields
-	for i := 0; i < refStruct.NumField(); i++ {
-		refField := refStruct.Field(i)
+	rField := refVal.FieldByName(name)
 
-		// Skip if the field cannot be set or is not a Pointer
-		if !refField.CanSet() || refField.Kind() != reflect.Pointer {
-			continue
-		}
-
-		// If the pointer is nil, initialize it
-		if refField.IsNil() {
-			refField.Set(reflect.New(refField.Type().Elem()))
-			continue
-		}
-
-		// If the pointer points to a struct, recursively initialize its fields
-		if refField.Elem().Kind() == reflect.Struct {
-			innerVal := refField.Elem()
-			InitStructPointerFields(&innerVal)
-		}
-
+	// Skip if the field cannot be set or is not a Pointer
+	if !rField.CanSet() || rField.Kind() != reflect.Pointer || !rField.IsNil() {
+		return
 	}
+
+	// If the pointer is nil, initialize it
+	rField.Set(reflect.New(rField.Type().Elem()))
+
 }
 
 func ReadStringSlicesMapIntoStruct(refStruct *reflect.Value, values map[string][]string) error {

@@ -95,11 +95,18 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 		// From the sampled value of the RequestContext type of the parameter, we get the RawContext and extract all the
 		// fields that we need.
 		refRawCtx := refCtx.Field(0)
+
+		// Now we have to initialize all the fields which will be pointing to nil
+		reflector.InitStructPointerField(&refRawCtx, "Body")
+		reflector.InitStructPointerField(&refRawCtx, "QueryParams")
+		reflector.InitStructPointerField(&refRawCtx, "PathParams")
+		reflector.InitStructPointerField(&refRawCtx, "Headers")
+
+		// The fields now are initialized and can be filled with data from the request payload
 		refBody := refRawCtx.FieldByName("Body")
 		refQueryParams := refRawCtx.FieldByName("QueryParams")
 		refPathParams := refRawCtx.FieldByName("PathParams")
 		refHeader := refRawCtx.FieldByName("Headers")
-		reflector.InitStructPointerFields(&refRawCtx)
 
 		var err error
 
