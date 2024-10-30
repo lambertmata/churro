@@ -67,8 +67,6 @@ func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetReq(req *http.Re
 
 type Context struct {
 	RawContext[any, any, any, any]
-	Req *http.Request
-	Res http.ResponseWriter
 }
 
 type ContextWithBody[Body any] struct {
