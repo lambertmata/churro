@@ -80,7 +80,9 @@ func writeProblemDetailsError(w http.ResponseWriter, err error) {
 	}
 }
 
-func Request[RequestCtx RequestContext, Response any](router *Router, method HttpMethod, path string, handler func(ctx RequestCtx) (Response, error)) *Route {
+type GenericRouteHandler[RequestCtx RequestContext, Response any] func(ctx RequestCtx) (Response, error)
+
+func Request[RequestCtx RequestContext, Response any](router *Router, method HttpMethod, path string, handler GenericRouteHandler[RequestCtx, Response]) *Route {
 
 	// Here we allow a user to define a typed route handler using one of the available RequestContext types, depending
 	// on which fields are needed.
@@ -174,39 +176,39 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 	return route
 }
 
-func Get[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
+func Get[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
 	return Request(router, MethodGet, path, handler)
 }
 
-func Put[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
+func Put[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
 	return Request(router, MethodPut, path, handler)
 }
 
-func Post[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
+func Post[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
 	return Request(router, MethodPost, path, handler)
 }
 
-func Patch[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
+func Patch[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
 	return Request(router, MethodPatch, path, handler)
 }
 
-func Delete[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
+func Delete[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
 	return Request(router, MethodDelete, path, handler)
 }
 
-func Connect[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
+func Connect[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
 	return Request(router, MethodConnect, path, handler)
 }
 
-func Trace[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
+func Trace[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
 	return Request(router, MethodTrace, path, handler)
 }
 
-func Head[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
+func Head[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
 	return Request(router, MethodHead, path, handler)
 }
 
-func Option[ContextType RequestContext, Response any](router *Router, path string, handler func(ctx ContextType) (Response, error)) *Route {
+func Option[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
 	return Request(router, MethodOption, path, handler)
 }
 
