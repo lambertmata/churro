@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	copy2 "github.com/lambertmata/churro/copy"
 	"github.com/lambertmata/churro/reflector"
 	"log/slog"
 	"net/http"
@@ -263,6 +264,19 @@ func WithWrappedData() ResponseMiddleware {
 			"data": *res,
 		}
 		*res = wrapped
+	}
+}
+
+func WithResponseAs(as any) ResponseMiddleware {
+	return func(w http.ResponseWriter, res *any) {
+		if res == nil || as == nil {
+			return
+		}
+		err := copy2.As(res, as)
+		if err != nil {
+			slog.Error("failed to convert response", "err", err)
+			return
+		}
 	}
 }
 
