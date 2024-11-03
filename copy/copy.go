@@ -43,7 +43,7 @@ func copy(inVal, outVal reflect.Value) {
 }
 
 func copySlice(inVal, outVal reflect.Value) {
-	if outVal.Kind() != reflect.Slice && outVal.Kind() != reflect.Array {
+	if outVal.Kind() != reflect.Slice && outVal.Kind() != reflect.Array || outVal.Kind() != inVal.Kind() {
 		return
 	}
 
