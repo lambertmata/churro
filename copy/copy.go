@@ -104,7 +104,7 @@ func copyStructFields(inVal, outVal reflect.Value) {
 			} else {
 				// Handle nested struct with different types
 				newStruct := reflect.New(outField.Type())
-				copy(inField.Addr(), newStruct)
+				copy(inField, newStruct)
 				outField.Set(newStruct.Elem())
 			}
 		default:
