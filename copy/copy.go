@@ -32,7 +32,7 @@ func copy(inVal, outVal reflect.Value) {
 	// Get the actual value for destination pointer
 	outVal = reflect.Indirect(outVal)
 
-	if inVal.Kind() == reflect.Slice {
+	if inVal.Kind() == reflect.Slice || inVal.Kind() == reflect.Array {
 		copySlice(inVal, outVal)
 		return
 	}
@@ -43,7 +43,7 @@ func copy(inVal, outVal reflect.Value) {
 }
 
 func copySlice(inVal, outVal reflect.Value) {
-	if outVal.Kind() != reflect.Slice {
+	if outVal.Kind() != reflect.Slice && outVal.Kind() != reflect.Array {
 		return
 	}
 
@@ -94,6 +94,8 @@ func copyStructFields(inVal, outVal reflect.Value) {
 		switch outField.Kind() {
 		case reflect.Ptr:
 			copyPointerField(inField, outField)
+		case reflect.Array:
+			fallthrough
 		case reflect.Slice:
 			copySlice(inField, outField)
 		case reflect.Struct:
