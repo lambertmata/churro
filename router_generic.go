@@ -24,6 +24,14 @@ func (e *ProblemDetailsError) Error() string {
 	return e.Title
 }
 
+func NewError(status int, title string, err error) error {
+	return &ProblemDetailsError{
+		Status: status,
+		Title:  title,
+		Err:    err,
+	}
+}
+
 // WriteResult writes res to response writer when type is []byte, JSON in all the other cases.
 func WriteResult(w http.ResponseWriter, res any) error {
 
@@ -74,6 +82,9 @@ type RequestHandler[Response any] func() (func(ctx RequestContext) (Response, er
 func writeProblemDetailsError(w http.ResponseWriter, err error) {
 	var problemDetailsError *ProblemDetailsError
 	if err != nil && errors.As(err, &problemDetailsError) {
+		if problemDetailsError.Type == "" {
+			problemDetailsError.Type = "about:blank"
+		}
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(problemDetailsError.Status)
 		json.NewEncoder(w).Encode(problemDetailsError)
@@ -81,9 +92,9 @@ func writeProblemDetailsError(w http.ResponseWriter, err error) {
 	}
 }
 
-type GenericRouteHandler[RequestCtx RequestContext, Response any] func(ctx RequestCtx) (Response, error)
+type GenericRouteHandler[RequestCtx RequestContext] func(ctx RequestCtx) error
 
-func Request[RequestCtx RequestContext, Response any](router *Router, method HttpMethod, path string, handler GenericRouteHandler[RequestCtx, Response]) *Route {
+func Request[RequestCtx RequestContext](router *Router, method HttpMethod, path string, handler GenericRouteHandler[RequestCtx]) *Route {
 
 	// Here we allow a user to define a typed route handler using one of the available RequestContext types, depending
 	// on which fields are needed.
@@ -150,7 +161,6 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 		}
 
 		if err != nil {
-			slog.Error("req err", "err", err.Error())
 			// If the handler returned an ProblemDetailsError, we write the response automatically
 			writeProblemDetailsError(w, err)
 			return
@@ -160,13 +170,14 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 		refCtx.FieldByName("Req").Set(reflect.ValueOf(req))
 
 		finalCtx := refCtx.Addr().Interface().(RequestCtx)
-		res, err := handler(finalCtx)
+		handlerErr := handler(finalCtx)
 
-		if err != nil {
-			slog.Error("error", "err", err.Error())
+		if handlerErr != nil {
+			writeProblemDetailsError(w, handlerErr)
+			return
 		}
 
-		if err := WriteResult(w, res); err != nil {
+		if err := WriteResult(w, finalCtx.getResponse()); err != nil {
 			slog.Error("failed to write response", "err", err.Error())
 		}
 
@@ -177,39 +188,39 @@ func Request[RequestCtx RequestContext, Response any](router *Router, method Htt
 	return route
 }
 
-func Get[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
+func Get[Context RequestContext](router *Router, path string, handler GenericRouteHandler[Context]) *Route {
 	return Request(router, MethodGet, path, handler)
 }
 
-func Put[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
+func Put[Context RequestContext](router *Router, path string, handler GenericRouteHandler[Context]) *Route {
 	return Request(router, MethodPut, path, handler)
 }
 
-func Post[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
+func Post[Context RequestContext](router *Router, path string, handler GenericRouteHandler[Context]) *Route {
 	return Request(router, MethodPost, path, handler)
 }
 
-func Patch[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
+func Patch[Context RequestContext](router *Router, path string, handler GenericRouteHandler[Context]) *Route {
 	return Request(router, MethodPatch, path, handler)
 }
 
-func Delete[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
+func Delete[Context RequestContext](router *Router, path string, handler GenericRouteHandler[Context]) *Route {
 	return Request(router, MethodDelete, path, handler)
 }
 
-func Connect[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
+func Connect[Context RequestContext](router *Router, path string, handler GenericRouteHandler[Context]) *Route {
 	return Request(router, MethodConnect, path, handler)
 }
 
-func Trace[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
+func Trace[Context RequestContext](router *Router, path string, handler GenericRouteHandler[Context]) *Route {
 	return Request(router, MethodTrace, path, handler)
 }
 
-func Head[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
+func Head[Context RequestContext](router *Router, path string, handler GenericRouteHandler[Context]) *Route {
 	return Request(router, MethodHead, path, handler)
 }
 
-func Option[Context RequestContext, Response any](router *Router, path string, handler GenericRouteHandler[Context, Response]) *Route {
+func Option[Context RequestContext](router *Router, path string, handler GenericRouteHandler[Context]) *Route {
 	return Request(router, MethodOption, path, handler)
 }
 

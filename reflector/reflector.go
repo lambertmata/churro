@@ -177,7 +177,12 @@ func FillStructFieldWithReaderBytes(refStruct *reflect.Value, field string, read
 func NewValFromFuncParameter(refFunc reflect.Value, i int) reflect.Value {
 	paramsInType := refFunc.Type()
 	// Get first parameter which is the ctx
-	paramCtx := paramsInType.In(i).Elem()
+	paramCtx := paramsInType.In(i)
+
+	if paramCtx.Kind() == reflect.Pointer {
+		paramCtx = paramCtx.Elem()
+	}
+
 	// Create new ctx
 	return reflect.New(paramCtx)
 }

@@ -1,6 +1,7 @@
 package churro
 
 import (
+	"io"
 	"net/http"
 )
 
@@ -11,6 +12,7 @@ type RequestContext interface {
 	GetQueryParams() any
 	SetReq(req *http.Request)
 	SetRes(w http.ResponseWriter)
+	getResponse() any
 }
 
 type RawContext[Body, QueryParams, Headers, PathParams any] struct {
@@ -20,49 +22,92 @@ type RawContext[Body, QueryParams, Headers, PathParams any] struct {
 	PathParams  *PathParams
 	QueryParams *QueryParams
 	Body        *Body
+	response    any
 }
 
-func (c RawContext[Body, QueryParams, Headers, PathParams]) GetBody() any {
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) GetBody() any {
 	if c.Body == nil {
 		c.Body = new(Body)
 	}
 	return c.Body
 }
 
-func (c RawContext[Body, QueryParams, Headers, PathParams]) GetHeaders() any {
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) GetHeaders() any {
 	if c.Headers == nil {
 		c.Headers = new(Headers)
 	}
 	return c.Headers
 }
 
-func (c RawContext[Body, QueryParams, Headers, PathParams]) GetPathParams() any {
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) GetPathParams() any {
 	return c.PathParams
 }
 
-func (c RawContext[Body, QueryParams, Headers, PathParams]) GetQueryParams() any {
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) GetQueryParams() any {
 	return c.QueryParams
 }
 
-func (c RawContext[Body, QueryParams, Headers, PathParams]) SetQueryParams(queryParams any) {
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetQueryParams(queryParams any) {
 	*c.QueryParams = queryParams.(QueryParams)
 }
-func (c RawContext[Body, QueryParams, Headers, PathParams]) SetHeaders(headers any) {
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetHeaders(headers any) {
 	*c.Headers = headers.(Headers)
 }
-func (c RawContext[Body, QueryParams, Headers, PathParams]) SetPathParams(pathParams any) {
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetPathParams(pathParams any) {
 	*c.PathParams = pathParams.(PathParams)
 }
-func (c RawContext[Body, QueryParams, Headers, PathParams]) GetPathParam(name string) string {
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) GetPathParam(name string) string {
 	return GetPathParam(c.Req, name)
 }
 
-func (c RawContext[Body, QueryParams, Headers, PathParams]) SetRes(res http.ResponseWriter) {
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetRes(res http.ResponseWriter) {
 	c.Res = res
 }
 
-func (c RawContext[Body, QueryParams, Headers, PathParams]) SetReq(req *http.Request) {
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetReq(req *http.Request) {
 	c.Req = req
+}
+
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) SendString(data string, middlewares ...ResponseMiddleware) error {
+	c.response = &HandlerResponse[any]{
+		payload:     data,
+		middlewares: middlewares,
+	}
+	return nil
+}
+
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) SendBytes(data []byte, middlewares ...ResponseMiddleware) error {
+	c.response = &HandlerResponse[[]byte]{
+		payload:     data,
+		middlewares: middlewares,
+	}
+	return nil
+}
+
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) SendJSON(data any, middlewares ...ResponseMiddleware) error {
+	middlewares = append(middlewares, WithJSONContentType(), WithWrappedData())
+	c.response = &HandlerResponse[any]{
+		payload:     data,
+		middlewares: middlewares,
+	}
+	return nil
+}
+
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) SendStream(data io.Reader, middlewares ...ResponseMiddleware) error {
+	c.response = &HandlerResponse[io.Reader]{
+		payload:     data,
+		middlewares: middlewares,
+	}
+	return nil
+}
+
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) getResponse() any {
+	return c.response
+}
+
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) Response(data any, middleware ...ResponseMiddleware) error {
+	c.response = data
+	return nil
 }
 
 type Context struct {
