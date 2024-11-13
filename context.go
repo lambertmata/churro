@@ -56,7 +56,7 @@ func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetHeaders(headers 
 func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetPathParams(pathParams any) {
 	*c.PathParams = pathParams.(PathParams)
 }
-func (c *RawContext[Body, QueryParams, Headers, PathParams]) GetPathParam(name string) string {
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) PathParam(name string) string {
 	return GetPathParam(c.Req, name)
 }
 

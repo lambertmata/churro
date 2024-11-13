@@ -22,41 +22,32 @@ func WrapProblemDetailsError(err error) error {
 	var ruleParamsError *validator.RuleParamsError
 	var unknownError *validator.UnknownRuleError
 
+	problemDetailsError := ProblemDetailsError{
+		Detail: err.Error(),
+		Err:    err,
+	}
+
 	if errors.As(err, &fieldValidationError) {
 
-		return &ProblemDetailsError{
-			Status: http.StatusUnprocessableEntity,
-			Title:  "Validation error",
-			Detail: err.Error(),
-			Err:    err,
-		}
+		problemDetailsError.Status = http.StatusUnprocessableEntity
+		problemDetailsError.Title = "Rule validation error"
 
 	} else if errors.As(err, &ruleParamsError) {
 
-		return &ProblemDetailsError{
-			Status: http.StatusUnprocessableEntity,
-			Title:  "Validation error",
-			Detail: err.Error(),
-			Err:    err,
-		}
+		problemDetailsError.Status = http.StatusBadRequest
+		problemDetailsError.Title = "Validation error"
 
 	} else if errors.As(err, &unknownError) {
 
-		return &ProblemDetailsError{
-			Status: http.StatusInternalServerError,
-			Title:  "Validation error",
-			Detail: err.Error(),
-			Err:    err,
-		}
+		problemDetailsError.Status = http.StatusInternalServerError
+		problemDetailsError.Title = "Unknown validation error"
 
+	} else {
+		problemDetailsError.Status = http.StatusInternalServerError
+		problemDetailsError.Title = "Internal server error"
 	}
 
-	return &ProblemDetailsError{
-		Status: http.StatusInternalServerError,
-		Title:  "Validation error",
-		Detail: "An unhandled validation error occurred",
-		Err:    err,
-	}
+	return &problemDetailsError
 
 }
 
