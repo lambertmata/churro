@@ -177,7 +177,7 @@ func Request[RequestCtx RequestContext](router *Router, method HttpMethod, path 
 
 		if handlerErr != nil {
 			if errorHandler := router.errorHandler; errorHandler != nil {
-				(*errorHandler)(req, w, err)
+				(*errorHandler)(req, w, handlerErr)
 			}
 			writeProblemDetailsError(w, handlerErr)
 			return
