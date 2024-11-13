@@ -161,6 +161,9 @@ func Request[RequestCtx RequestContext](router *Router, method HttpMethod, path 
 		}
 
 		if err != nil {
+			if errorHandler := router.errorHandler; errorHandler != nil {
+				(*errorHandler)(req, w, err)
+			}
 			// If the handler returned an ProblemDetailsError, we write the response automatically
 			writeProblemDetailsError(w, err)
 			return
@@ -173,6 +176,9 @@ func Request[RequestCtx RequestContext](router *Router, method HttpMethod, path 
 		handlerErr := handler(finalCtx)
 
 		if handlerErr != nil {
+			if errorHandler := router.errorHandler; errorHandler != nil {
+				(*errorHandler)(req, w, err)
+			}
 			writeProblemDetailsError(w, handlerErr)
 			return
 		}

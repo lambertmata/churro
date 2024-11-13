@@ -22,6 +22,8 @@ const (
 
 type Middleware func(next http.Handler) http.Handler
 
+type RoutesErrorHandler func(r *http.Request, w http.ResponseWriter, err error)
+
 type GroupCloser interface {
 	Prefix(string)
 	Middlewares(middleware ...Middleware) GroupCloser
@@ -39,6 +41,8 @@ type Router struct {
 	fullPrefix string
 	// parentGroup is the parent Router holding the Router, when used in a parentGroup. Is nil in root router.
 	parentGroup *Router
+	// errorHandler is an optional error handler invoked when a handler or validator return error. Triggered only by errors occurring in type routes.
+	errorHandler *ErrorHandler
 }
 
 type Mux interface {
@@ -194,4 +198,8 @@ func GetPathParam(req *http.Request, name string) string {
 		}
 	}
 	return ""
+}
+
+func (r *Router) ErrorHandler(handler RoutesErrorHandler) {
+	r.errorHandler = &handler
 }
