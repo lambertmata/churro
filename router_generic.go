@@ -60,7 +60,7 @@ func WriteResult(w http.ResponseWriter, res any) error {
 	}
 
 	// Special case for byte slices (binary data)
-	if refRes.Kind() == reflect.Slice && refRes.Type().Elem().Kind() == reflect.Uint8 {
+	if (refRes.Kind() == reflect.Slice || refRes.Kind() == reflect.Array) && refRes.Type().Elem().Kind() == reflect.Uint8 {
 		// Write bytes directly
 		if _, err := w.Write(refRes.Interface().([]byte)); err != nil {
 			return fmt.Errorf("failed to write binary data %w", err)
