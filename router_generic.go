@@ -39,6 +39,10 @@ func WriteResult(w http.ResponseWriter, res any) error {
 
 	isResponseHandler := false
 
+	if refRes.IsNil() {
+		return nil
+	}
+
 	if refRes.Kind() == reflect.Ptr {
 
 		if refRes.IsNil() {
