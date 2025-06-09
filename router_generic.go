@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	copy2 "github.com/lambertmata/churro/copy"
 	"github.com/lambertmata/churro/reflector"
 	"log/slog"
 	"net/http"
 	"reflect"
+	"io"
 )
 
 type ProblemDetailsError struct {
@@ -65,10 +65,21 @@ func WriteResult(w http.ResponseWriter, res any) error {
 
 	// Special case for byte slices (binary data)
 	switch bytes := res.(type) {
+	case io.Reader:
+		if _, err := io.Copy(w, bytes); err != nil {
+			return fmt.Errorf("failed to write reader data %w", err)
+		}
+		return nil
+	case string:
+		if _, err := w.Write([]byte(bytes)); err != nil {
+			return fmt.Errorf("failed to write string data %w", err)
+		}
+		return nil
 	case []byte:
 		if _, err := w.Write(bytes); err != nil {
 			return fmt.Errorf("failed to write binary data %w", err)
 		}
+		return nil
 	}
 
 	// For all other types, use JSON encoder
@@ -285,31 +296,4 @@ func WithWrappedData() ResponseMiddleware {
 		}
 		*res = wrapped
 	}
-}
-
-func WithResponseAs(as any) ResponseMiddleware {
-	return func(w http.ResponseWriter, res *any) {
-		if res == nil || as == nil {
-			return
-		}
-		err := copy2.As(res, as)
-		if err != nil {
-			slog.Error("failed to convert response", "err", err)
-			return
-		}
-	}
-}
-
-func Response[ResponseType any](response ResponseType, err error, middlewares ...ResponseMiddleware) (*HandlerResponse[ResponseType], error) {
-
-	if err != nil {
-		return nil, err
-	}
-
-	r := HandlerResponse[ResponseType]{
-		payload:     response,
-		middlewares: middlewares,
-	}
-
-	return &r, nil
 }
