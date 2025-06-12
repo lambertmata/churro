@@ -41,6 +41,8 @@ type Node struct {
 	Middleware    []Middleware
 	Prefix        string
 	Children      []*Node
+	// ChildrenMap provides O(1) lookup for children by prefix
+	ChildrenMap   map[string]*Node
 	ParamKey      *string
 	Parent        *Node
 }
@@ -87,7 +89,10 @@ func (n *Node) matchesPathParamMatcher(segment string, method HttpMethod) (bool,
 }
 
 func NewNode(prefix string) *Node {
-	node := &Node{Prefix: prefix}
+	node := &Node{
+		Prefix:      prefix,
+		ChildrenMap: make(map[string]*Node),
+	}
 	if node.isPathParam() {
 		paramKey := node.Param()
 		node.ParamKey = &paramKey
@@ -99,10 +104,27 @@ type RadixTree struct {
 	root *Node
 }
 
+// initializeChildrenMaps recursively initializes the ChildrenMap for all nodes in the tree
+func initializeChildrenMaps(node *Node) {
+	if node.ChildrenMap == nil {
+		node.ChildrenMap = make(map[string]*Node)
+	}
+
+	// Add all children to the map
+	for _, child := range node.Children {
+		node.ChildrenMap[child.Prefix] = child
+		// Recursively initialize children's maps
+		initializeChildrenMaps(child)
+	}
+}
+
 func NewRadixTree() *RadixTree {
-	return &RadixTree{
+	tree := &RadixTree{
 		root: NewNode("/"),
 	}
+	// Initialize ChildrenMap for all nodes
+	initializeChildrenMaps(tree.root)
+	return tree
 }
 
 // FindInsertionNode searches the appropriate Node for insertion.
@@ -147,10 +169,13 @@ func (rt *RadixTree) RemoveRouteHandler(method HttpMethod, path string) (bool, e
 	if len((*node).Children) > 0 {
 		delete(node.RouteHandlers, method)
 	} else {
-		siblings := (*node.Parent).Children
-		for i, child := range siblings {
+		// Update the parent's Children slice
+		parent := node.Parent
+		for i, child := range parent.Children {
 			if child == node {
-				siblings = append(siblings[:i], siblings[i+1:]...)
+				parent.Children = append(parent.Children[:i], parent.Children[i+1:]...)
+				// Also remove from the map
+				delete(parent.ChildrenMap, node.Prefix)
 				break
 			}
 		}
@@ -206,18 +231,44 @@ func (rt *RadixTree) WalkSegments(path string, createNodes bool, callback func(n
 
 		var segmentNode *Node
 
-		for _, child := range curNode.Children {
-			// Here we follow the path segments when one of the following cases is fulfilled
-			// a) the current node matches the segment (following the path)
-			// b) the current node is a path parameter (we can continue to the next)
-			// c) the current node is a path parameter with matcher (we can continue to the next if matching)
+		// First check if we have a direct match in the ChildrenMap (O(1) lookup)
+		if child, exists := curNode.ChildrenMap[segment]; exists {
+			if callback(child, segment) {
+				segmentNode = child
+			}
+		} else {
+			// If not found in map, check for path parameters or other special cases
+			// that require checking all children
 
-			if !callback(child, segment) {
-				//return nil, ErrNodeNotFound
-				continue
+			// First, check for path parameter nodes (they start with "{" and end with "}")
+			var pathParamNodes []*Node
+			for _, child := range curNode.Children {
+				if child.isPathParam() {
+					pathParamNodes = append(pathParamNodes, child)
+				}
 			}
 
-			segmentNode = child
+			// Check path parameter nodes first
+			for _, child := range pathParamNodes {
+				if callback(child, segment) {
+					segmentNode = child
+					break // Found a match, no need to continue
+				}
+			}
+
+			// If no path parameter node matched, check remaining children
+			if segmentNode == nil {
+				for _, child := range curNode.Children {
+					if child.isPathParam() {
+						continue // Already checked path parameter nodes
+					}
+
+					if callback(child, segment) {
+						segmentNode = child
+						break // Found a match, no need to continue
+					}
+				}
+			}
 		}
 
 		// No node was there, so we have to create a new one and link it the to current node.segmentNode
@@ -225,6 +276,8 @@ func (rt *RadixTree) WalkSegments(path string, createNodes bool, callback func(n
 			segmentNode = NewNode(segment)
 			segmentNode.Parent = curNode
 			curNode.Children = append(curNode.Children, segmentNode)
+			// Also add to the map for O(1) lookup
+			curNode.ChildrenMap[segment] = segmentNode
 		}
 
 		curNode = segmentNode
