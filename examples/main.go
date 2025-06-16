@@ -56,13 +56,13 @@ func main() {
 			writer.Write([]byte(request.RequestURI))
 		})
 
-		gRouter.Post("/channel/:channel", func(writer http.ResponseWriter, request *http.Request) {
+		gRouter.Post("/channel/{channel}", func(writer http.ResponseWriter, request *http.Request) {
 			writer.Write([]byte(request.RequestURI))
 		})
 
 	}).Prefix("/ws")
 
-	router.Post("/api/channel/:channel", func(writer http.ResponseWriter, request *http.Request) {
+	router.Post("/api/channel/{channel}", func(writer http.ResponseWriter, request *http.Request) {
 		writer.Write([]byte(request.RequestURI))
 	})
 
