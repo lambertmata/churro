@@ -41,6 +41,8 @@ type Router struct {
 	fullPrefix string
 	// parentGroup is the parent Router holding the Router, when used in a parentGroup. Is nil in root router.
 	parentGroup *Router
+	// middlewares stores middlewares specific to this router level
+	middlewares []Middleware
 	// errorHandler is an optional error handler invoked when a handler or validator return error. Triggered only by errors occurring in type routes.
 	errorHandler *RouterErrorHandler
 }
@@ -48,9 +50,7 @@ type Router struct {
 type Mux interface {
 	AddRoute(route *RouteHandler)
 	RemoveRoute(method HttpMethod, path string)
-	Match(method HttpMethod, path string) (*RouteHandler, []Middleware, error)
-	AddMiddleware(method HttpMethod, path string, middleware ...Middleware) error
-	AddRouterMiddleware(path string, middleware ...Middleware) error
+	Match(method HttpMethod, path string) (*RouteHandler, error)
 }
 
 func NewRouter() *Router {
@@ -130,9 +130,29 @@ func (r *Router) Prefix(prefix string) {
 	r.UpdateRoutesPaths()
 }
 
+// collectMiddlewaresChain collects middlewares from root to current router
+func (r *Router) collectMiddlewaresChain() []Middleware {
+	var chain []Middleware
+	var routers []*Router
+
+	// Collect router hierarchy from current to root
+	current := r
+	for current != nil {
+		routers = append(routers, current)
+		current = current.parentGroup
+	}
+
+	// Apply middlewares from root to current (reverse order)
+	for i := len(routers) - 1; i >= 0; i-- {
+		chain = append(chain, routers[i].middlewares...)
+	}
+
+	return chain
+}
+
 func (r *Router) Middlewares(middleware ...Middleware) GroupCloser {
 	//r.middlewares = append(r.middlewares, middleware...)
-	r.mux.AddRouterMiddleware(r.fullPrefix, middleware...)
+	r.middlewares = append(r.middlewares, middleware...)
 	return r
 }
 
@@ -169,7 +189,7 @@ func (r *Router) applyMiddlewares(handler http.Handler, middlewares []Middleware
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
-	routeHandler, middlewares, err := r.mux.Match(HttpMethod(req.Method), req.URL.Path)
+	routeHandler, err := r.mux.Match(HttpMethod(req.Method), req.URL.Path)
 
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
@@ -178,7 +198,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	ctx := context.WithValue(req.Context(), RouterContext{}, routeHandler.ParamValues)
 
-	r.applyMiddlewares(routeHandler.Handler, middlewares).ServeHTTP(w, req.WithContext(ctx))
+	r.applyMiddlewares(routeHandler.Handler, routeHandler.Middlewares).ServeHTTP(w, req.WithContext(ctx))
 
 }
 

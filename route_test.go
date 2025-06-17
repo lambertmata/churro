@@ -62,7 +62,7 @@ func TestDefineParamMatchers(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	route := NewRoute(MethodGet, "/users/:id", h)
+	route := NewRoute(MethodGet, "/users/{id}", h)
 
 	if route.Matchers != nil {
 		t.Errorf("New route initial route.Matchers = %v, want nil", route.Matchers)

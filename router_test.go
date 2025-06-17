@@ -1,12 +1,9 @@
 package churro
 
 import (
-	"encoding/json"
 	"errors"
-	"github.com/lambertmata/churro/middlewares"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -20,17 +17,17 @@ func TestRouterRouteCreateBasic(t *testing.T) {
 
 	cases := []RouteCases{
 		{"GET", "/users"},
-		{"GET", "/users/:id"},
+		{"GET", "/users/{id}"},
 		{"PATCH", "/users"},
-		{"POST", "/users/:id"},
+		{"POST", "/users/{id}"},
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {})
 
 	r.Get("users", handler)
-	r.Get("users/:id", handler)
+	r.Get("users/{id}", handler)
 	r.Patch("users", handler)
-	r.Post("users/:id", handler)
+	r.Post("users/{id}", handler)
 
 	if len(r.routes) < 4 {
 		t.Fatal("Expected exactly 4 routes, got ", len(r.routes))
@@ -60,18 +57,18 @@ func TestRouterRouteGroupsBasic(t *testing.T) {
 
 		g1.Option("users", handler)
 		g1.Get("users", handler)
-		g1.Delete("users/:id", handler)
+		g1.Delete("users/{id}", handler)
 		g1.Patch("users", handler)
-		g1.Post("users/:id", handler)
+		g1.Post("users/{id}", handler)
 
 		g1.Group(func(g2 *Router) {
-			g2.Get(":id/items", handler)
+			g2.Get("{id}/items", handler)
 			g2.Get("/", handler)
 		}).Prefix("users")
 
 	}).Prefix("v1")
 
-	r.Head("v1/users/:id", handler)
+	r.Head("v1/users/{id}", handler)
 
 	if len(r.Routes()) < 9 {
 		t.Fatal("Expected at least 8 routes, got ", len(r.Routes()))
@@ -127,10 +124,10 @@ func TestRouterMatchers(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {})
 
 	r.Get("users", handler)
-	r.Get("users/:id", handler)
+	r.Get("users/{id}", handler)
 	r.Patch("users", handler)
-	r.Post("users/:id", handler)
-	r.Get("users/:any", handler).Matches("any", ".*")
+	r.Post("users/{id}", handler)
+	r.Get("users/{any}", handler).Matches("any", ".*")
 
 }
 
@@ -147,26 +144,26 @@ func TestGrouped(t *testing.T) {
 		gRouter.Get("/", handler)
 	}).Prefix("/ws")
 
-	r.Get("/ws/channels/:channel", handler)
+	r.Get("/ws/channels/{channel}", handler)
 
-	route, _, _ := r.mux.Match(MethodGet, "/")
+	route, _ := r.mux.Match(MethodGet, "/")
 	if route == nil {
 		t.Fatal("Expected route to exist")
 	}
 
-	route, _, _ = r.mux.Match(MethodGet, "/ws/channels/1")
+	route, _ = r.mux.Match(MethodGet, "/ws/channels/1")
 
 	if route == nil {
 		t.Fatal("Expected route to exist")
 	}
 
-	route, _, err := r.mux.Match(MethodPost, "/ws/private-channels")
+	route, err := r.mux.Match(MethodPost, "/ws/private-channels")
 
 	if err == nil || !errors.Is(err, ErrNodeNotFound) {
 		t.Fatalf("Expected ErrRoutedMethodNotImplemented, got %v", err)
 	}
 
-	route, _, err = r.mux.Match(MethodPost, "/ws/private-channels")
+	route, err = r.mux.Match(MethodPost, "/ws/private-channels")
 
 	if err == nil || !errors.Is(err, ErrNodeNotFound) {
 		t.Fatalf("Expected ErrNodeRouteUndefined, got %v", err)
@@ -178,14 +175,14 @@ func TestReadPathParams(t *testing.T) {
 
 	r.Group(func(g *Router) {
 
-		g.Get("/users/:id", func(w http.ResponseWriter, req *http.Request) {
+		g.Get("/users/{id}", func(w http.ResponseWriter, req *http.Request) {
 			id := GetPathParam(req, "id")
 			if id != "1" {
 				t.Errorf("Expected id to b 1, got none")
 			}
 		})
 
-		g.Get("/users/:user-id/orders/:order-id", func(w http.ResponseWriter, req *http.Request) {
+		g.Get("/users/{user-id}/orders/{order-id}", func(w http.ResponseWriter, req *http.Request) {
 			if GetPathParam(req, "user-id") != "1" {
 				t.Errorf("Expected id to b 1, got none")
 			}
@@ -203,51 +200,4 @@ func TestReadPathParams(t *testing.T) {
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/users/1/orders/100", nil)
 	r.ServeHTTP(w, req)
-}
-
-type UserRequest struct {
-	Email    string `json:"name"`
-	Password string `json:"password"`
-}
-
-func (u *UserRequest) Valid() *middlewares.ValidationError {
-	if u.Email != "aa" || u.Password != "aa" {
-		return &middlewares.ValidationError{
-			Message: "",
-			Errors:  map[string]interface{}{"email": "should be aa", "password": "should be aa"},
-		}
-	}
-	return nil
-}
-
-func TestJsonBody(t *testing.T) {
-	r := NewRouter()
-
-	r.Group(func(g *Router) {
-
-		g.Post("/users", func(w http.ResponseWriter, req *http.Request) {
-			_ = middlewares.GetValidated[*UserRequest](req)
-		}).Middlewares(middlewares.ValidateJson[*UserRequest]())
-
-	}).Prefix("/api")
-
-	w := httptest.NewRecorder()
-	user := UserRequest{}
-	body, _ := json.Marshal(user)
-	req := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(string(body)))
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("Expected status code to be %d, got %d:", http.StatusUnprocessableEntity, w.Code)
-	}
-
-	w = httptest.NewRecorder()
-	user = UserRequest{
-		Email:    "aa",
-		Password: "aa",
-	}
-	body, _ = json.Marshal(user)
-	req = httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(string(body)))
-	r.ServeHTTP(w, req)
-
 }

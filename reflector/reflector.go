@@ -89,23 +89,6 @@ func ReadStringMapIntoStruct(refStruct *reflect.Value, values map[string]string)
 	return ReadStringSlicesMapIntoStruct(refStruct, pathParamsToValues)
 }
 
-// CreateStructFromMapValues populates an Output struct with values from the provided values map.
-// It matches the struct's fields (case-insensitively) with the keys in the values map,
-// filling only those fields that have corresponding keys.
-// Any unmatched fields in the Output struct will be ignored.
-// If a matching field in the Output struct is defined as a non-slice type,
-// only the first element from the corresponding value will be copied.
-func CreateStructFromMapValues[Output any](values map[string][]string) Output {
-
-	var output Output
-
-	refOutputPtr := reflect.ValueOf(&output).Elem()
-
-	ReadStringSlicesMapIntoStruct(&refOutputPtr, values)
-
-	return output
-}
-
 func ConvertNumericStringValIntoNumberOutputVal(refInputVal, refOutputVal reflect.Value) error {
 	if refInputVal.Kind() != reflect.String {
 		return nil

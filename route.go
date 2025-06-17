@@ -24,6 +24,9 @@ type Route struct {
 
 	// Matchers contains the path param Matchers defined with [Route.Matches].
 	Matchers map[string]string
+
+	// middlewares stores middlewares specific to this router level
+	middlewares []Middleware
 }
 
 func NewRoute(method HttpMethod, path string, handler http.Handler) *Route {
@@ -44,7 +47,7 @@ func NewRoute(method HttpMethod, path string, handler http.Handler) *Route {
 }
 
 func (r *Route) Middlewares(middlewares ...Middleware) {
-	r.router.mux.AddMiddleware(r.Method, r.path, middlewares...)
+	r.middlewares = append(r.middlewares, middlewares...)
 }
 
 // Matches defines a regex for a Route path param.
@@ -60,10 +63,16 @@ func (r *Route) Matches(pathParam, regex string) *Route {
 }
 
 func (r *Route) RouteHandler() *RouteHandler {
+
+	// Collect middlewares: router chain + route-specific
+	routerMiddlewares := r.router.collectMiddlewaresChain()
+	allMiddlewares := append(routerMiddlewares, r.middlewares...)
+
 	return &RouteHandler{
-		Path:    r.fullPath,
-		Method:  r.Method,
-		Matcher: r.Matchers,
-		Handler: r.handler,
+		Path:        r.fullPath,
+		Method:      r.Method,
+		Matcher:     r.Matchers,
+		Handler:     r.handler,
+		Middlewares: allMiddlewares,
 	}
 }
