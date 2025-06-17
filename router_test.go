@@ -1,12 +1,9 @@
 package churro
 
 import (
-	"encoding/json"
 	"errors"
-	"github.com/lambertmata/churro/middlewares"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -149,24 +146,24 @@ func TestGrouped(t *testing.T) {
 
 	r.Get("/ws/channels/{channel}", handler)
 
-	route, _, _ := r.mux.Match(MethodGet, "/")
+	route, _ := r.mux.Match(MethodGet, "/")
 	if route == nil {
 		t.Fatal("Expected route to exist")
 	}
 
-	route, _, _ = r.mux.Match(MethodGet, "/ws/channels/1")
+	route, _ = r.mux.Match(MethodGet, "/ws/channels/1")
 
 	if route == nil {
 		t.Fatal("Expected route to exist")
 	}
 
-	route, _, err := r.mux.Match(MethodPost, "/ws/private-channels")
+	route, err := r.mux.Match(MethodPost, "/ws/private-channels")
 
 	if err == nil || !errors.Is(err, ErrNodeNotFound) {
 		t.Fatalf("Expected ErrRoutedMethodNotImplemented, got %v", err)
 	}
 
-	route, _, err = r.mux.Match(MethodPost, "/ws/private-channels")
+	route, err = r.mux.Match(MethodPost, "/ws/private-channels")
 
 	if err == nil || !errors.Is(err, ErrNodeNotFound) {
 		t.Fatalf("Expected ErrNodeRouteUndefined, got %v", err)
@@ -203,51 +200,4 @@ func TestReadPathParams(t *testing.T) {
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/users/1/orders/100", nil)
 	r.ServeHTTP(w, req)
-}
-
-type UserRequest struct {
-	Email    string `json:"name"`
-	Password string `json:"password"`
-}
-
-func (u *UserRequest) Valid() *middlewares.ValidationError {
-	if u.Email != "aa" || u.Password != "aa" {
-		return &middlewares.ValidationError{
-			Message: "",
-			Errors:  map[string]interface{}{"email": "should be aa", "password": "should be aa"},
-		}
-	}
-	return nil
-}
-
-func TestJsonBody(t *testing.T) {
-	r := NewRouter()
-
-	r.Group(func(g *Router) {
-
-		g.Post("/users", func(w http.ResponseWriter, req *http.Request) {
-			_ = middlewares.GetValidated[*UserRequest](req)
-		}).Middlewares(middlewares.ValidateJson[*UserRequest]())
-
-	}).Prefix("/api")
-
-	w := httptest.NewRecorder()
-	user := UserRequest{}
-	body, _ := json.Marshal(user)
-	req := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(string(body)))
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("Expected status code to be %d, got %d:", http.StatusUnprocessableEntity, w.Code)
-	}
-
-	w = httptest.NewRecorder()
-	user = UserRequest{
-		Email:    "aa",
-		Password: "aa",
-	}
-	body, _ = json.Marshal(user)
-	req = httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(string(body)))
-	r.ServeHTTP(w, req)
-
 }

@@ -26,19 +26,18 @@ var ErrRoutedMethodNotImplemented = errors.New("route method not implemented")
 var ErrPathParamMatcherNotDefined = errors.New("path param matcher not found")
 
 type RouteHandler struct {
-	Path        string
-	Method      HttpMethod
-	Matcher     map[string]string
-	Middlewares []Middleware
-	Handler     http.Handler
+	Path    string
+	Method  HttpMethod
+	Matcher map[string]string
+	Handler http.Handler
 	// Node is the Node to which the route handler is attached to
 	Node        *Node
 	ParamValues map[string]string
+	Middlewares []Middleware
 }
 
 type Node struct {
 	RouteHandlers map[HttpMethod]*RouteHandler
-	Middleware    []Middleware
 	Prefix        string
 	Children      []*Node
 	ParamKey      *string
@@ -284,32 +283,16 @@ func (rt *RadixTree) SearchPath(path string, method HttpMethod) (*RouteHandler, 
 	return routeHandler, nil
 }
 
-func (rt *RadixTree) GetRouteMiddlewares(routeHandler *RouteHandler) []Middleware {
-
-	curNode := routeHandler.Node
-	middlewares := routeHandler.Middlewares
-
-	for curNode != nil {
-		middlewaresCount := len(curNode.Middleware)
-		for i := middlewaresCount - 1; i >= 0; i-- {
-			middlewares = append(middlewares, curNode.Middleware[i])
-		}
-		curNode = curNode.Parent
-	}
-
-	return middlewares
-}
-
 // Match finds the matched route handler and middlewares for the given method and path.
-func (rt *RadixTree) Match(method HttpMethod, path string) (*RouteHandler, []Middleware, error) {
+func (rt *RadixTree) Match(method HttpMethod, path string) (*RouteHandler, error) {
 
 	routeHandler, err := rt.SearchPath(path, method)
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to find matches for %s %s %w ", method, path, err)
+		return nil, fmt.Errorf("failed to find matches for %s %s %w ", method, path, err)
 	}
 
-	return routeHandler, rt.GetRouteMiddlewares(routeHandler), nil
+	return routeHandler, nil
 }
 
 func (rt *RadixTree) AddRoute(routeHandler *RouteHandler) {
@@ -318,27 +301,4 @@ func (rt *RadixTree) AddRoute(routeHandler *RouteHandler) {
 
 func (rt *RadixTree) RemoveRoute(method HttpMethod, path string) {
 	rt.RemoveRouteHandler(method, path)
-}
-
-func (rt *RadixTree) AddMiddleware(method HttpMethod, path string, middleware ...Middleware) error {
-	routeHandler, err := rt.SearchPath(path, method)
-	if err != nil {
-		return fmt.Errorf("set route middleware failed %w", err)
-	}
-	routeHandler.Middlewares = append(routeHandler.Middlewares, middleware...)
-	return nil
-}
-
-func (rt *RadixTree) AddRouterMiddleware(path string, middleware ...Middleware) error {
-
-	node, err := rt.WalkSegments(path, false, func(node *Node, segment string) bool {
-		return node.Prefix == segment
-	})
-
-	if err != nil {
-		return fmt.Errorf("set router middleware failed %w", err)
-	}
-
-	node.Middleware = append(node.Middleware, middleware...)
-	return nil
 }
