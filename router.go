@@ -181,8 +181,9 @@ func (r *Router) Routes() []*Route {
 
 // applyMiddlewares takes and [http.Handler] and runs all the given middlewares.
 func (r *Router) applyMiddlewares(handler http.Handler, middlewares []Middleware) http.Handler {
-	for _, middleware := range middlewares {
-		handler = middleware(handler)
+	// Apply middlewares in reverse order so the first middleware added becomes the outermost wrapper
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		handler = middlewares[i](handler)
 	}
 	return handler
 }
