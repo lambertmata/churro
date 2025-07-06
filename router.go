@@ -153,7 +153,21 @@ func (r *Router) collectMiddlewaresChain() []Middleware {
 func (r *Router) Middlewares(middleware ...Middleware) GroupCloser {
 	//r.middlewares = append(r.middlewares, middleware...)
 	r.middlewares = append(r.middlewares, middleware...)
+
+	// Update all existing routes in the mux to include the new middlewares
+	r.updateRoutesMiddlewares()
+
 	return r
+}
+
+// updateRoutesMiddlewares updates all existing routes in the mux with the current middleware chain
+func (r *Router) updateRoutesMiddlewares() {
+	for _, route := range r.Routes() {
+		if route.router != nil && route.router.mux != nil {
+			route.router.mux.RemoveRoute(route.Method, route.fullPath)
+			route.router.mux.AddRoute(route.RouteHandler())
+		}
+	}
 }
 
 // Routes returns current Router routes recursively.
