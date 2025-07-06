@@ -48,6 +48,12 @@ func NewRoute(method HttpMethod, path string, handler http.Handler) *Route {
 
 func (r *Route) Middlewares(middlewares ...Middleware) {
 	r.middlewares = append(r.middlewares, middlewares...)
+
+	// Update the mux with the new RouteHandler that includes the updated middlewares
+	if r.router != nil && r.router.mux != nil {
+		r.router.mux.RemoveRoute(r.Method, r.fullPath)
+		r.router.mux.AddRoute(r.RouteHandler())
+	}
 }
 
 // Matches defines a regex for a Route path param.
