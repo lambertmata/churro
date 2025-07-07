@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"github.com/lambertmata/churro/reflector"
+	"io"
+	"log
 	"log/slog"
 	"net/http"
-	"reflect"
 	"io"
 )
 
@@ -35,11 +36,16 @@ func NewError(status int, title string, err error) error {
 // WriteResult writes res to response writer when type is []byte, JSON in all the other cases.
 func WriteResult(w http.ResponseWriter, res any) error {
 
+	// Handle nil response early to avoid reflection errors
+	if res == nil {
+		return nil
+	}
+
 	refRes := reflect.ValueOf(res)
 
 	isResponseHandler := false
 
-	if refRes.IsNil() {
+	if refRes.IsValid() && refRes.IsNil() {
 		return nil
 	}
 
