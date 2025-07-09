@@ -166,10 +166,6 @@ func (v *Validator) validate(input any, fieldName, rulesString string) error {
 				curFieldName = fieldName + "." + curFieldName
 			}
 
-			if len(rules) == 0 {
-				continue
-			}
-
 			if err := v.validate(data.Interface(), curFieldName, rules); err != nil {
 				return err
 			}

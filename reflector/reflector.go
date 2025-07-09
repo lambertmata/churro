@@ -107,7 +107,7 @@ func ConvertNumericStringValIntoNumberOutputVal(refInputVal, refOutputVal reflec
 }
 
 func IsByteSlice(field reflect.Value) bool {
-	return field.Kind() == reflect.Slice && field.Kind() == reflect.Uint8
+	return field.Kind() == reflect.Slice && field.Type().Elem().Kind() == reflect.Uint8
 }
 
 func IsIOReader(field reflect.Value) bool {
