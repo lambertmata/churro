@@ -1,3 +1,3 @@
 module github.com/lambertmata/churro
 
-go 1.22
+go 1.24
