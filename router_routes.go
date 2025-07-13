@@ -34,6 +34,6 @@ func (r *Router) Head(path string, handler http.HandlerFunc) *Route {
 	return r.Request(MethodHead, path, handler)
 }
 
-func (r *Router) Option(path string, handler http.HandlerFunc) *Route {
-	return r.Request(MethodOption, path, handler)
+func (r *Router) Options(path string, handler http.HandlerFunc) *Route {
+	return r.Request(MethodOptions, path, handler)
 }

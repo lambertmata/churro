@@ -30,13 +30,13 @@ func TestNewRoutePrefix(t *testing.T) {
 
 }
 
-func TestRouteHttpMethods(t *testing.T) {
+func TestRouteHTTPMethods(t *testing.T) {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
 	table := []struct {
-		method       HttpMethod
+		method       HTTPMethod
 		wantedMethod string
 	}{
 		{MethodGet, "GET"},
@@ -44,7 +44,7 @@ func TestRouteHttpMethods(t *testing.T) {
 		{MethodPut, "PUT"},
 		{MethodPatch, "PATCH"},
 		{MethodHead, "HEAD"},
-		{MethodOption, "OPTIONS"},
+		{MethodOptions, "OPTIONS"},
 		{MethodConnect, "CONNECT"},
 		{MethodTrace, "TRACE"},
 	}

@@ -7,13 +7,13 @@ import (
 
 func TestWrapProblemDetailsError(t *testing.T) {
 
-	err := WrapProblemDetailsError(nil)
+	err := wrapProblemDetailsError(nil)
 
 	if err != nil {
 		t.Fatalf("Error should be nil but was %v", err)
 	}
 
-	err = WrapProblemDetailsError(errors.New("test error"))
+	err = wrapProblemDetailsError(errors.New("test error"))
 
 	if err == nil {
 		t.Fatalf("Error should not be nil but was %v", err)

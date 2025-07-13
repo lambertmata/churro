@@ -38,11 +38,24 @@ func LogRequests() churro.Middleware {
 	}
 }
 
+func MiddlewareA() churro.Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			slog.Info("Middleware A")
+			next.ServeHTTP(w, req)
+		})
+	}
+}
+
 func main() {
 	router := churro.NewRouter()
 
-	router.Middlewares(LogRequests())
+	router.Middlewares(LogRequests(), MiddlewareA())
 
+	churro.Get(router, "/api/2", func(ctx *churro.Context) error {
+		slog.Info("API 2")
+		return ctx.SendString("API 2 response")
+	})
 	router.Get("/api", func(writer http.ResponseWriter, request *http.Request) {
 		writer.Write([]byte(request.RequestURI))
 	}).Middlewares(LogRequests())
@@ -52,7 +65,7 @@ func main() {
 	})
 
 	router.Group(func(gRouter *churro.Router) {
-		gRouter.Get("/", func(writer http.ResponseWriter, request *http.Request) {
+		gRouter.Get("/status", func(writer http.ResponseWriter, request *http.Request) {
 			writer.Write([]byte(request.RequestURI))
 		})
 

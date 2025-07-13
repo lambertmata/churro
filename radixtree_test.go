@@ -26,7 +26,9 @@ func TestNewRadixTree(t *testing.T) {
 	}
 
 	for _, route := range routes {
-		tree.AddRoute(route.RouteHandler())
+		if err := tree.AddRoute(route.RouteHandler()); err != nil {
+			t.Fatalf("Failed to add route %s %s: %v", route.Method, route.path, err)
+		}
 	}
 
 	inserted := tree.Routes()
@@ -37,7 +39,7 @@ func TestNewRadixTree(t *testing.T) {
 
 	table := []struct {
 		path        string
-		method      HttpMethod
+		method      HTTPMethod
 		expectedErr error
 	}{
 		{"api/users/1", MethodGet, nil},

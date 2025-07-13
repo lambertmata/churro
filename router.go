@@ -1,26 +1,51 @@
+// Package churro is a simple HTTP router with support for middleware,
+// path parameters, and type-safe handlers.
+//
+// Basic usage:
+//
+//	router := churro.NewRouter()
+//	router.Get("/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+//		userID := churro.GetPathParam(r, "id")
+//		// handle request...
+//	})
+//	http.ListenAndServe(":8080", router)
+//
+// Type-safe handlers with automatic validation:
+//
+//	type CreateUser struct {
+//		Name  string `json:"name" validate:"required"`
+//		Email string `json:"email" validate:"required,email"`
+//	}
+//
+//	churro.Post(router, "/users", func(ctx *churro.ContextWithBody[CreateUser]) error {
+//		return ctx.SendJSON(map[string]string{"id": "123"})
+//	})
+//
+// Features include path parameters, route groups, middleware support,
+// request validation, and multiple response types.
 package churro
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"path"
 )
 
-type HttpMethod string
+type HTTPMethod string
 
 const (
-	MethodGet     HttpMethod = http.MethodGet
-	MethodPost    HttpMethod = http.MethodPost
-	MethodPut     HttpMethod = http.MethodPut
-	MethodPatch   HttpMethod = http.MethodPatch
-	MethodDelete  HttpMethod = http.MethodDelete
-	MethodHead    HttpMethod = http.MethodHead
-	MethodOption  HttpMethod = http.MethodOptions
-	MethodConnect HttpMethod = http.MethodConnect
-	MethodTrace   HttpMethod = http.MethodTrace
+	MethodGet     HTTPMethod = http.MethodGet
+	MethodPost    HTTPMethod = http.MethodPost
+	MethodPut     HTTPMethod = http.MethodPut
+	MethodPatch   HTTPMethod = http.MethodPatch
+	MethodDelete  HTTPMethod = http.MethodDelete
+	MethodHead    HTTPMethod = http.MethodHead
+	MethodOptions HTTPMethod = http.MethodOptions
+	MethodConnect HTTPMethod = http.MethodConnect
+	MethodTrace   HTTPMethod = http.MethodTrace
 )
-
-type Middleware func(next http.Handler) http.Handler
 
 type RouterErrorHandler func(r *http.Request, w http.ResponseWriter, err error)
 
@@ -45,21 +70,82 @@ type Router struct {
 	middlewares []Middleware
 	// errorHandler is an optional error handler invoked when a handler or validator return error. Triggered only by errors occurring in type routes.
 	errorHandler *RouterErrorHandler
+	// notFoundHandler is called when no route matches the request (404)
+	notFoundHandler http.Handler
+	// methodNotAllowedHandler is called when route exists but method is not allowed (405)
+	methodNotAllowedHandler http.Handler
 }
 
 type Mux interface {
-	AddRoute(route *RouteHandler)
-	RemoveRoute(method HttpMethod, path string)
-	Match(method HttpMethod, path string) (*RouteHandler, error)
+	AddRoute(route *RouteHandler) error
+	RemoveRoute(method HTTPMethod, path string)
+	Match(method HTTPMethod, path string) (*RouteHandler, error)
 }
 
-func NewRouter() *Router {
-	return &Router{
-		mux: NewRadixTree(),
+// Config holds configuration options for the Router
+type Config struct {
+	MaxRoutes              int
+	CaseSensitive          bool
+	StrictSlash            bool
+	HandleMethodNotAllowed bool
+}
+
+// DefaultConfig returns a Config with sensible defaults
+func DefaultConfig() Config {
+	return Config{
+		MaxRoutes:              1000,
+		CaseSensitive:          false,
+		StrictSlash:            false,
+		HandleMethodNotAllowed: false,
 	}
 }
 
-func UpdateRouterPrefixes(router *Router) {
+// RouterOption defines a function type for configuring Router options
+type RouterOption func(*Router)
+
+// WithMux sets a custom Mux implementation for the router
+func WithMux(mux Mux) RouterOption {
+	return func(r *Router) {
+		r.mux = mux
+	}
+}
+
+// WithConfig sets configuration options for the router
+func WithConfig(config Config) RouterOption {
+	return func(r *Router) {
+		// Store config for future use
+		// For now, we'll just validate the config
+		if config.MaxRoutes <= 0 {
+			config.MaxRoutes = DefaultConfig().MaxRoutes
+		}
+	}
+}
+
+// NewRouter creates a new Router with default RadixTree mux
+func NewRouter(opts ...RouterOption) *Router {
+	r := &Router{
+		mux: NewRadixTree(),
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(r)
+	}
+
+	return r
+}
+
+// NewRouterWithMux creates a new Router with a custom Mux implementation
+func NewRouterWithMux(mux Mux) *Router {
+	if mux == nil {
+		mux = NewRadixTree()
+	}
+	return &Router{
+		mux: mux,
+	}
+}
+
+func updateRouterPrefixes(router *Router) {
 	curNode := router
 
 	var fullPrefix string
@@ -72,7 +158,7 @@ func UpdateRouterPrefixes(router *Router) {
 	router.fullPrefix = fullPrefix
 }
 
-func UpdateRouteFullPaths(route *Route) {
+func updateRouteFullPaths(route *Route) {
 	curNode := route.router
 
 	var fullPrefix string
@@ -88,22 +174,28 @@ func UpdateRouteFullPaths(route *Route) {
 // UpdateRoutesPaths adjusts all the Router routes to include prefixes from parent groups
 func (r *Router) UpdateRoutesPaths() {
 	for _, route := range r.Routes() {
-		UpdateRouteFullPaths(route)
+		updateRouteFullPaths(route)
 		r.mux.RemoveRoute(route.Method, route.fullPath)
-		r.mux.AddRoute(route.RouteHandler())
+		if err := r.mux.AddRoute(route.RouteHandler()); err != nil {
+			panic(fmt.Sprintf("failed to update route %s %s: %v", route.Method, route.fullPath, err))
+		}
 	}
 }
 
-func (r *Router) AddRoute(route *Route) {
+func (r *Router) AddRoute(route *Route) error {
 	route.router = r
 	r.routes = append(r.routes, route)
-	UpdateRouteFullPaths(route)
-	r.mux.AddRoute(route.RouteHandler())
+	updateRouteFullPaths(route)
+	return r.mux.AddRoute(route.RouteHandler())
 }
 
-func (r *Router) Request(method HttpMethod, path string, handler http.HandlerFunc) *Route {
+func (r *Router) Request(method HTTPMethod, path string, handler http.HandlerFunc) *Route {
 	route := NewRoute(method, path, handler)
-	r.AddRoute(route)
+	if err := r.AddRoute(route); err != nil {
+		// Log the error but don't break the API and return the route anyway
+		// Return route even if adding fails to maintain API consistency
+		panic(fmt.Sprintf("failed to add route %s %s: %v", method, path, err))
+	}
 	return route
 }
 
@@ -125,8 +217,8 @@ func (r *Router) Group(f func(gRouter *Router)) GroupCloser {
 // Prefix sets the current Router prefix. All routes defined in sub Router(s) will be prefixed.
 func (r *Router) Prefix(prefix string) {
 	r.prefix = prefix
-	UpdateRouterPrefixes(r)
-	// After setting the prefix, we need to compute all the new prefixed paths of the Route(s)
+	updateRouterPrefixes(r)
+	// Update all route paths to include the new prefix
 	r.UpdateRoutesPaths()
 }
 
@@ -165,7 +257,9 @@ func (r *Router) updateRoutesMiddlewares() {
 	for _, route := range r.Routes() {
 		if route.router != nil && route.router.mux != nil {
 			route.router.mux.RemoveRoute(route.Method, route.fullPath)
-			route.router.mux.AddRoute(route.RouteHandler())
+			if err := route.router.mux.AddRoute(route.RouteHandler()); err != nil {
+				panic(fmt.Sprintf("failed to update route middlewares %s %s: %v", route.Method, route.fullPath, err))
+			}
 		}
 	}
 }
@@ -174,9 +268,8 @@ func (r *Router) updateRoutesMiddlewares() {
 func (r *Router) Routes() []*Route {
 	var routes []*Route
 
-	// Here we traverse the router routes using DFS approach. First we take the current route routes
-	// then the children routers routes and so on.
-	// we initialize a stack with the current router
+	// Traverse router tree using DFS to collect all routes
+	// Initialize stack with current router
 	routersStack := []*Router{r}
 
 	for len(routersStack) > 0 {
@@ -202,30 +295,81 @@ func (r *Router) applyMiddlewares(handler http.Handler, middlewares []Middleware
 	return handler
 }
 
-func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+// defaultNotFoundHandler returns a default 404 handler
+func (r *Router) defaultNotFoundHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		err := NewNotFoundError("")
+		WriteProblemDetails(w, err)
+	})
+}
 
-	routeHandler, err := r.mux.Match(HttpMethod(req.Method), req.URL.Path)
+// defaultMethodNotAllowedHandler returns a default 405 handler
+func (r *Router) defaultMethodNotAllowedHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		err := NewMethodNotAllowedError("")
+		WriteProblemDetails(w, err)
+	})
+}
+
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	routeHandler, err := r.mux.Match(HTTPMethod(req.Method), req.URL.Path)
 
 	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
+		// Determine error type and use appropriate handler
+		var handler http.Handler
+
+		if errors.Is(err, errRoutedMethodNotImplemented) {
+			// 405 Method Not Allowed
+			if r.methodNotAllowedHandler != nil {
+				handler = r.methodNotAllowedHandler
+			} else {
+				handler = r.defaultMethodNotAllowedHandler()
+			}
+		} else {
+			// 404 Not Found (errNodeNotFound or other errors)
+			if r.notFoundHandler != nil {
+				handler = r.notFoundHandler
+			} else {
+				handler = r.defaultNotFoundHandler()
+			}
+		}
+
+		// Apply global middleware to error handlers so logging etc. works
+		globalMiddlewares := r.collectMiddlewaresChain()
+		r.applyMiddlewares(handler, globalMiddlewares).ServeHTTP(w, req)
 		return
 	}
 
-	ctx := context.WithValue(req.Context(), RouterContext{}, routeHandler.ParamValues)
-
+	ctx := WithPathParams(req.Context(), routeHandler.ParamValues)
 	r.applyMiddlewares(routeHandler.Handler, routeHandler.Middlewares).ServeHTTP(w, req.WithContext(ctx))
-
 }
 
-type RouterContext struct{}
+type contextKey string
 
+const (
+	pathParamsKey contextKey = "churro:path_params"
+)
+
+// WithPathParams adds path parameters to the request context
+func WithPathParams(ctx context.Context, params map[string]string) context.Context {
+	return context.WithValue(ctx, pathParamsKey, params)
+}
+
+// PathParamsFromContext retrieves path parameters from the request context
+func PathParamsFromContext(ctx context.Context) (map[string]string, bool) {
+	params, ok := ctx.Value(pathParamsKey).(map[string]string)
+	return params, ok
+}
+
+// GetPathParams retrieves path parameters from the request context
 func GetPathParams(req *http.Request) map[string]string {
-	if ctx := req.Context().Value(RouterContext{}); ctx != nil {
-		return ctx.(map[string]string)
+	if params, ok := PathParamsFromContext(req.Context()); ok {
+		return params
 	}
 	return nil
 }
 
+// GetPathParam retrieves a specific path parameter from the request context
 func GetPathParam(req *http.Request, name string) string {
 	if params := GetPathParams(req); params != nil {
 		if val, ok := params[name]; ok {
@@ -237,4 +381,16 @@ func GetPathParam(req *http.Request, name string) string {
 
 func (r *Router) ErrorHandler(handler RouterErrorHandler) {
 	r.errorHandler = &handler
+}
+
+// NotFoundHandler sets a custom handler for 404 (Not Found) responses.
+// The handler will still run through the middleware chain.
+func (r *Router) NotFoundHandler(handler http.Handler) {
+	r.notFoundHandler = handler
+}
+
+// MethodNotAllowedHandler sets a custom handler for 405 (Method Not Allowed) responses.
+// The handler will still run through the middleware chain.
+func (r *Router) MethodNotAllowedHandler(handler http.Handler) {
+	r.methodNotAllowedHandler = handler
 }

@@ -1,6 +1,7 @@
 package churro
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -8,7 +9,7 @@ import (
 type Route struct {
 
 	// Method is the HTTP method of the route
-	Method HttpMethod
+	Method HTTPMethod
 
 	// path is the actual path that is defined when creating the Route value
 	path string
@@ -29,7 +30,7 @@ type Route struct {
 	middlewares []Middleware
 }
 
-func NewRoute(method HttpMethod, path string, handler http.Handler) *Route {
+func NewRoute(method HTTPMethod, path string, handler http.Handler) *Route {
 
 	// Making sure path starts always with one "/"
 	path = strings.TrimPrefix(path, "/")
@@ -52,7 +53,9 @@ func (r *Route) Middlewares(middlewares ...Middleware) {
 	// Update the mux with the new RouteHandler that includes the updated middlewares
 	if r.router != nil && r.router.mux != nil {
 		r.router.mux.RemoveRoute(r.Method, r.fullPath)
-		r.router.mux.AddRoute(r.RouteHandler())
+		if err := r.router.mux.AddRoute(r.RouteHandler()); err != nil {
+			panic(fmt.Sprintf("failed to update route middlewares %s %s: %v", r.Method, r.fullPath, err))
+		}
 	}
 }
 

@@ -160,7 +160,16 @@ func (v *Validator) validate(input any, fieldName, rulesString string) error {
 
 			rules := field.Tag.Get("validate")
 
+			// Use JSON tag name if available, otherwise use field name
 			curFieldName := field.Name
+			if jsonTag := field.Tag.Get("json"); jsonTag != "" {
+				// Extract the field name from JSON tag (ignore options like omitempty)
+				if commaIndex := strings.Index(jsonTag, ","); commaIndex != -1 {
+					curFieldName = jsonTag[:commaIndex]
+				} else {
+					curFieldName = jsonTag
+				}
+			}
 
 			if fieldName != "" {
 				curFieldName = fieldName + "." + curFieldName

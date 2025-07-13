@@ -1,148 +1,37 @@
 package churro
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/lambertmata/churro/reflector"
-	"io"
-	"log
 	"log/slog"
 	"net/http"
-	"io"
+	"reflect"
 )
-
-type ProblemDetailsError struct {
-	Status int      `json:"status"`
-	Type   string   `json:"type"`
-	Title  string   `json:"title"`
-	Detail string   `json:"detail"`
-	Errors []string `json:"errors"`
-	Err    error    `json:"-"`
-}
-
-func (e *ProblemDetailsError) Error() string {
-	return e.Title
-}
-
-func NewError(status int, title string, err error) error {
-	return &ProblemDetailsError{
-		Status: status,
-		Title:  title,
-		Err:    err,
-	}
-}
-
-// WriteResult writes res to response writer when type is []byte, JSON in all the other cases.
-func WriteResult(w http.ResponseWriter, res any) error {
-
-	// Handle nil response early to avoid reflection errors
-	if res == nil {
-		return nil
-	}
-
-	refRes := reflect.ValueOf(res)
-
-	isResponseHandler := false
-
-	if refRes.IsValid() && refRes.IsNil() {
-		return nil
-	}
-
-	if refRes.Kind() == reflect.Ptr {
-
-		if refRes.IsNil() {
-			w.WriteHeader(http.StatusNoContent)
-			return errors.New("failed to return nil res")
-		}
-
-		isResponseHandler = refRes.Type().Implements(reflect.TypeOf((*responseTypeProvider)(nil)).Elem())
-		refRes = refRes.Elem()
-	}
-
-	if isResponseHandler {
-		hr := refRes.Interface().(responseTypeProvider)
-		res = hr.Payload()
-
-		for _, m := range hr.Middlewares() {
-			m(w, &res)
-		}
-	}
-
-	// Special case for byte slices (binary data)
-	switch bytes := res.(type) {
-	case io.Reader:
-		if _, err := io.Copy(w, bytes); err != nil {
-			return fmt.Errorf("failed to write reader data %w", err)
-		}
-		return nil
-	case string:
-		if _, err := w.Write([]byte(bytes)); err != nil {
-			return fmt.Errorf("failed to write string data %w", err)
-		}
-		return nil
-	case []byte:
-		if _, err := w.Write(bytes); err != nil {
-			return fmt.Errorf("failed to write binary data %w", err)
-		}
-		return nil
-	}
-
-	// For all other types, use JSON encoder
-	if err := json.NewEncoder(w).Encode(res); err != nil {
-		return fmt.Errorf("failed to write json data %w", err)
-	}
-
-	return nil
-}
 
 type RequestHandler[Response any] func() (func(ctx RequestContext) (Response, error), RequestContext)
 
-// writeProblemDetailsError writes problem details error as a json response if err is ProblemDetailsError
-func writeProblemDetailsError(w http.ResponseWriter, err error) {
-	var problemDetailsError *ProblemDetailsError
-	if err != nil && errors.As(err, &problemDetailsError) {
-		if problemDetailsError.Type == "" {
-			problemDetailsError.Type = "about:blank"
-		}
-		w.Header().Set("Content-Type", "application/problem+json")
-		w.WriteHeader(problemDetailsError.Status)
-		json.NewEncoder(w).Encode(problemDetailsError)
-		return
-	}
-}
-
 type GenericRouteHandler[RequestCtx RequestContext] func(ctx RequestCtx) error
 
-func Request[RequestCtx RequestContext](router *Router, method HttpMethod, path string, handler GenericRouteHandler[RequestCtx]) *Route {
+func Request[RequestCtx RequestContext](router *Router, method HTTPMethod, path string, handler GenericRouteHandler[RequestCtx]) *Route {
 
-	// Here we allow a user to define a typed route handler using one of the available RequestContext types, depending
-	// on which fields are needed.
-	// We have:
-	// - ContextWithBody to have typed Body
-	// - ContextWithBodyAndQuery to have Body and Query typed
-	// - RawContext to type Body, Query, Headers and PathParams
-	// - Context to not type anything at all.
-	// Since I still haven't found a way to do things using interfaces, I have to rely on reflection to derive the types
-	// from the defined context type in the handler parameter.
-	// We sample the parameter by taking the first handler parameter and accessing Body, QueryParams, PathParams and
-	// Headers in Embedded RawContext.
+	// Create an HTTP handler that uses reflection to populate typed context fields
+	// from request data (body, query params, headers, path params) and validates them.
 	route := NewRoute(method, path, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 
-		// Sampling the type from the handler ctx parameter
+		// Get the context type from the handler parameter
 		refCtx := reflector.NewValFromFuncParameter(reflect.ValueOf(handler), 0).Elem()
 
-		// From the sampled value of the RequestContext type of the parameter, we get the RawContext and extract all the
-		// fields that we need.
+		// Extract the embedded RawContext
 		refRawCtx := refCtx.Field(0)
 
-		// Now we have to initialize all the fields which will be pointing to nil
+		// Initialize pointer fields
 		reflector.InitStructPointerField(&refRawCtx, "Body")
 		reflector.InitStructPointerField(&refRawCtx, "QueryParams")
 		reflector.InitStructPointerField(&refRawCtx, "PathParams")
 		reflector.InitStructPointerField(&refRawCtx, "Headers")
 
-		// The fields now are initialized and can be filled with data from the request payload
+		// Get references to typed fields for population
 		refBody := refRawCtx.FieldByName("Body")
 		refQueryParams := refRawCtx.FieldByName("QueryParams")
 		refPathParams := refRawCtx.FieldByName("PathParams")
@@ -184,8 +73,11 @@ func Request[RequestCtx RequestContext](router *Router, method HttpMethod, path 
 			if errorHandler := router.errorHandler; errorHandler != nil {
 				(*errorHandler)(req, w, err)
 			}
-			// If the handler returned an ProblemDetailsError, we write the response automatically
-			writeProblemDetailsError(w, err)
+			// Write structured error response
+			if !WriteProblemDetails(w, err) {
+				// Fallback for non-structured errors
+				WriteProblemDetails(w, NewBadRequestError("Request validation failed"))
+			}
 			return
 		}
 
@@ -199,7 +91,10 @@ func Request[RequestCtx RequestContext](router *Router, method HttpMethod, path 
 			if errorHandler := router.errorHandler; errorHandler != nil {
 				(*errorHandler)(req, w, handlerErr)
 			}
-			writeProblemDetailsError(w, handlerErr)
+			if !WriteProblemDetails(w, handlerErr) {
+				// Fallback for non-structured errors
+				WriteProblemDetails(w, NewInternalServerError(handlerErr.Error()))
+			}
 			return
 		}
 
@@ -209,7 +104,9 @@ func Request[RequestCtx RequestContext](router *Router, method HttpMethod, path 
 
 	}))
 
-	router.AddRoute(route)
+	if err := router.AddRoute(route); err != nil {
+		panic(fmt.Sprintf("failed to add generic route %s %s: %v", method, path, err))
+	}
 
 	return route
 }
@@ -246,60 +143,6 @@ func Head[Context RequestContext](router *Router, path string, handler GenericRo
 	return Request(router, MethodHead, path, handler)
 }
 
-func Option[Context RequestContext](router *Router, path string, handler GenericRouteHandler[Context]) *Route {
-	return Request(router, MethodOption, path, handler)
-}
-
-type ResponseMiddleware func(w http.ResponseWriter, res *any)
-
-type HandlerResponse[ResponseType any] struct {
-	payload     ResponseType
-	middlewares []ResponseMiddleware
-}
-
-func (hr HandlerResponse[ResponseType]) ResponseType() reflect.Type {
-	return reflect.TypeOf(hr.payload)
-}
-
-func (hr HandlerResponse[ResponseType]) Middlewares() []ResponseMiddleware {
-	return hr.middlewares
-}
-
-func (hr HandlerResponse[ResponseType]) Payload() any {
-	return hr.payload
-}
-
-type responseTypeProvider interface {
-	ResponseType() reflect.Type
-	Middlewares() []ResponseMiddleware
-	Payload() any
-}
-
-func WithStatusCode(statusCode int) ResponseMiddleware {
-	return func(w http.ResponseWriter, res *any) {
-		w.WriteHeader(statusCode)
-	}
-}
-
-func WithHeader(name, value string) ResponseMiddleware {
-	return func(w http.ResponseWriter, res *any) {
-		w.Header().Set(name, value)
-	}
-}
-
-func WithContentType(contentType string) ResponseMiddleware {
-	return WithHeader("Content-Type", contentType)
-}
-
-func WithJSONContentType() ResponseMiddleware {
-	return WithHeader("Content-Type", "application/json")
-}
-
-func WithWrappedData() ResponseMiddleware {
-	return func(w http.ResponseWriter, res *any) {
-		wrapped := map[string]any{
-			"data": *res,
-		}
-		*res = wrapped
-	}
+func Options[Context RequestContext](router *Router, path string, handler GenericRouteHandler[Context]) *Route {
+	return Request(router, MethodOptions, path, handler)
 }

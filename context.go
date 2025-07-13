@@ -1,6 +1,7 @@
 package churro
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 )
@@ -47,14 +48,31 @@ func (c *RawContext[Body, QueryParams, Headers, PathParams]) GetQueryParams() an
 	return c.QueryParams
 }
 
-func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetQueryParams(queryParams any) {
-	*c.QueryParams = queryParams.(QueryParams)
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetQueryParams(queryParams any) error {
+	qp, ok := queryParams.(QueryParams)
+	if !ok {
+		return fmt.Errorf("invalid query params type: expected %T, got %T", *new(QueryParams), queryParams)
+	}
+	*c.QueryParams = qp
+	return nil
 }
-func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetHeaders(headers any) {
-	*c.Headers = headers.(Headers)
+
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetHeaders(headers any) error {
+	h, ok := headers.(Headers)
+	if !ok {
+		return fmt.Errorf("invalid headers type: expected %T, got %T", *new(Headers), headers)
+	}
+	*c.Headers = h
+	return nil
 }
-func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetPathParams(pathParams any) {
-	*c.PathParams = pathParams.(PathParams)
+
+func (c *RawContext[Body, QueryParams, Headers, PathParams]) SetPathParams(pathParams any) error {
+	pp, ok := pathParams.(PathParams)
+	if !ok {
+		return fmt.Errorf("invalid path params type: expected %T, got %T", *new(PathParams), pathParams)
+	}
+	*c.PathParams = pp
+	return nil
 }
 func (c *RawContext[Body, QueryParams, Headers, PathParams]) PathParam(name string) string {
 	return GetPathParam(c.Req, name)

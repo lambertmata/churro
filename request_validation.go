@@ -11,8 +11,36 @@ import (
 	"strings"
 )
 
-// WrapProblemDetailsError wraps non-nil error into ProblemDetailsError.
-func WrapProblemDetailsError(err error) error {
+// collectValidationErrors extracts all validation errors from a compound error
+func collectValidationErrors(err error) []string {
+	if err == nil {
+		return nil
+	}
+
+	var errorList []string
+
+	// Handle compound errors by extracting individual error messages
+	if joinedErr, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, subErr := range joinedErr.Unwrap() {
+			errorList = append(errorList, collectValidationErrors(subErr)...)
+		}
+		return errorList
+	}
+
+	// Extract field validation errors with context
+	var fieldValidationError *validator.FieldValidationError
+	if errors.As(err, &fieldValidationError) {
+		errorList = append(errorList, fmt.Sprintf("Field '%s': %s", fieldValidationError.Field, fieldValidationError.Error()))
+		return errorList
+	}
+
+	// Add the error message as-is if it's not a field validation error
+	errorList = append(errorList, err.Error())
+	return errorList
+}
+
+// wrapProblemDetailsError wraps non-nil error into ProblemDetailsError.
+func wrapProblemDetailsError(err error) error {
 
 	if err == nil {
 		return nil
@@ -22,32 +50,24 @@ func WrapProblemDetailsError(err error) error {
 	var ruleParamsError *validator.RuleParamsError
 	var unknownError *validator.UnknownRuleError
 
-	problemDetailsError := ProblemDetailsError{
-		Detail: err.Error(),
-		Err:    err,
-	}
+	// Collect detailed error messages
+	errorMessages := collectValidationErrors(err)
 
 	if errors.As(err, &fieldValidationError) {
-
-		problemDetailsError.Status = http.StatusUnprocessableEntity
-		problemDetailsError.Title = "Rule validation error"
-
+		return NewValidationError(errorMessages).WithCause(err)
 	} else if errors.As(err, &ruleParamsError) {
-
-		problemDetailsError.Status = http.StatusBadRequest
-		problemDetailsError.Title = "Validation error"
-
+		return NewProblemDetails(http.StatusBadRequest, "Validation Error", "Request validation failed").
+			WithType("validation-error").
+			WithExtension("errors", errorMessages).
+			WithCause(err)
 	} else if errors.As(err, &unknownError) {
-
-		problemDetailsError.Status = http.StatusInternalServerError
-		problemDetailsError.Title = "Unknown validation error"
-
-	} else {
-		problemDetailsError.Status = http.StatusInternalServerError
-		problemDetailsError.Title = "Internal server error"
+		return NewProblemDetails(http.StatusInternalServerError, "Unknown Validation Error", err.Error()).
+			WithType("validation-error").
+			WithCause(err)
 	}
 
-	return &problemDetailsError
+	// Generic error fallback
+	return NewInternalServerError(err.Error()).WithCause(err)
 
 }
 
@@ -87,7 +107,7 @@ func readValidatedBody(req *http.Request, bodyRef *reflect.Value) error {
 		}
 
 		if err := validator.NewValidator().Validate(bodyRef.Interface()); err != nil {
-			return WrapProblemDetailsError(err)
+			return wrapProblemDetailsError(err)
 		}
 
 	case "multipart/form-data":
@@ -123,7 +143,7 @@ func readValidatedBody(req *http.Request, bodyRef *reflect.Value) error {
 		}
 
 		if err := validator.NewValidator().Validate(bodyRef.Elem().Interface()); err != nil {
-			return WrapProblemDetailsError(err)
+			return wrapProblemDetailsError(err)
 		}
 
 	default:
@@ -143,7 +163,7 @@ func readValidatedHeader(req *http.Request, refHeader *reflect.Value) error {
 		return fmt.Errorf("failed reading header values: %w", err)
 	}
 
-	return WrapProblemDetailsError(validator.NewValidator().Validate(refHeader.Interface()))
+	return wrapProblemDetailsError(validator.NewValidator().Validate(refHeader.Interface()))
 }
 
 // readValidatedQuery reads query parameters from req, copy the contents into `refQuery` struct and applies
@@ -154,7 +174,7 @@ func readValidatedQuery(req *http.Request, refQuery *reflect.Value) error {
 		return fmt.Errorf("failed reading query params: %w", err)
 	}
 
-	return WrapProblemDetailsError(validator.NewValidator().Validate(refQuery.Interface()))
+	return wrapProblemDetailsError(validator.NewValidator().Validate(refQuery.Interface()))
 }
 
 // readPathParams reads path parameters from req, copy the contents into `refPathParams` struct and applies
@@ -165,5 +185,5 @@ func readPathParams(req *http.Request, refPathParams *reflect.Value) error {
 		return fmt.Errorf("failed reading path params: %w", err)
 	}
 
-	return WrapProblemDetailsError(validator.NewValidator().Validate(refPathParams.Interface()))
+	return wrapProblemDetailsError(validator.NewValidator().Validate(refPathParams.Interface()))
 }

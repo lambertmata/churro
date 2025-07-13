@@ -35,7 +35,7 @@ func TestRouterRouteCreateBasic(t *testing.T) {
 
 	for i, c := range cases {
 		route := r.routes[i]
-		if route.Method != HttpMethod(c.Method) {
+		if route.Method != HTTPMethod(c.Method) {
 			t.Errorf("%d: want method %s, got %s", i, c.Method, route.Method)
 		}
 		if route.path != c.Path {
@@ -55,7 +55,7 @@ func TestRouterRouteGroupsBasic(t *testing.T) {
 
 	r.Group(func(g1 *Router) {
 
-		g1.Option("users", handler)
+		g1.Options("users", handler)
 		g1.Get("users", handler)
 		g1.Delete("users/{id}", handler)
 		g1.Patch("users", handler)
@@ -138,10 +138,9 @@ func TestGrouped(t *testing.T) {
 
 	r.Get("/api", handler)
 	r.Get("/", handler)
-	r.Get("ws/", handler)
 
 	r.Group(func(gRouter *Router) {
-		gRouter.Get("/", handler)
+		gRouter.Get("/status", handler)
 	}).Prefix("/ws")
 
 	r.Get("/ws/channels/{channel}", handler)
