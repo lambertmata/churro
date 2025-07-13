@@ -2,11 +2,13 @@ package validator
 
 import (
 	"net/mail"
+	"net/url"
 	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
 	"time"
+	"unicode"
 )
 
 // RequiredRule Value under validation must be set and non-empty.
@@ -144,5 +146,50 @@ func InArrayRule(field reflect.Value, params []string) bool {
 func UUIDRule(field reflect.Value, params []string) bool {
 	rfc4122UUID := `^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`
 	matches, _ := regexp.MatchString(rfc4122UUID, field.String())
+	return matches
+}
+
+// BooleanRule Value under validation must be a valid boolean.
+func BooleanRule(field reflect.Value, _ []string) bool {
+	return field.Kind() == reflect.Bool
+}
+
+// NumberRule Value under validation must be a numeric type.
+func NumberRule(field reflect.Value, _ []string) bool {
+	return IsNumber(field, nil)
+}
+
+// ASCIIRule Value under validation must contain only ASCII characters.
+func ASCIIRule(field reflect.Value, _ []string) bool {
+	str := field.String()
+	for _, char := range str {
+		if char > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
+}
+
+// AlphaNumRule Value under validation must contain only alphanumeric characters.
+func AlphaNumRule(field reflect.Value, _ []string) bool {
+	str := field.String()
+	for _, char := range str {
+		if !unicode.IsLetter(char) && !unicode.IsNumber(char) {
+			return false
+		}
+	}
+	return true
+}
+
+// URLRule Value under validation must be a valid URL.
+func URLRule(field reflect.Value, _ []string) bool {
+	_, err := url.ParseRequestURI(field.String())
+	return err == nil
+}
+
+// HexColorRule Value under validation must be a valid hex color code.
+func HexColorRule(field reflect.Value, _ []string) bool {
+	hexColor := `^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$`
+	matches, _ := regexp.MatchString(hexColor, field.String())
 	return matches
 }

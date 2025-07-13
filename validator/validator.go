@@ -68,6 +68,12 @@ func (v *Validator) registerDefaultRules() error {
 	v.RegisterRule("date", DateRule)
 	v.RegisterRule("in", InArrayRule)
 	v.RegisterRule("uuid", UUIDRule)
+	v.RegisterRule("boolean", BooleanRule)
+	v.RegisterRule("number", NumberRule)
+	v.RegisterRule("ascii", ASCIIRule)
+	v.RegisterRule("alpha_num", AlphaNumRule)
+	v.RegisterRule("url", URLRule)
+	v.RegisterRule("hex_color", HexColorRule)
 	return nil
 }
 
