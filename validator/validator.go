@@ -177,12 +177,20 @@ func (v *Validator) validate(input any, fieldName, rulesString string) error {
 				}
 			}
 
-			if fieldName != "" {
-				curFieldName = fieldName + "." + curFieldName
-			}
+			// For embedded structs (Anonymous fields), don't add the field name to the path
+			// unless there's a JSON tag explicitly naming it
+			if field.Anonymous && field.Tag.Get("json") == "" {
+				if err := v.validate(data.Interface(), fieldName, rules); err != nil {
+					return err
+				}
+			} else {
+				if fieldName != "" {
+					curFieldName = fieldName + "." + curFieldName
+				}
 
-			if err := v.validate(data.Interface(), curFieldName, rules); err != nil {
-				return err
+				if err := v.validate(data.Interface(), curFieldName, rules); err != nil {
+					return err
+				}
 			}
 		}
 
