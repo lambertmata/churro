@@ -71,20 +71,30 @@ func MinRule(field reflect.Value, params []string) bool {
 		return false
 	}
 
-	minVal, err := strconv.Atoi(params[0])
-
-	if err != nil {
-		return false
-	}
-
 	switch field.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return field.Int() >= int64(minVal)
+		minVal, err := strconv.ParseInt(params[0], 10, 64)
+		if err != nil {
+			return false
+		}
+		return field.Int() >= minVal
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return field.Uint() >= uint64(minVal)
+		minVal, err := strconv.ParseUint(params[0], 10, 64)
+		if err != nil {
+			return false
+		}
+		return field.Uint() >= minVal
 	case reflect.Float32, reflect.Float64:
-		return field.Float() >= float64(minVal)
+		minVal, err := strconv.ParseFloat(params[0], 64)
+		if err != nil {
+			return false
+		}
+		return field.Float() >= minVal
 	case reflect.String, reflect.Slice, reflect.Map, reflect.Array:
+		minVal, err := strconv.Atoi(params[0])
+		if err != nil {
+			return false
+		}
 		return field.Len() >= minVal
 	default:
 		return false
@@ -98,20 +108,30 @@ func MaxRule(field reflect.Value, params []string) bool {
 		return false
 	}
 
-	maxVal, err := strconv.Atoi(params[0])
-
-	if err != nil {
-		return false
-	}
-
 	switch field.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return field.Int() <= int64(maxVal)
+		maxVal, err := strconv.ParseInt(params[0], 10, 64)
+		if err != nil {
+			return false
+		}
+		return field.Int() <= maxVal
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return field.Uint() <= uint64(maxVal)
+		maxVal, err := strconv.ParseUint(params[0], 10, 64)
+		if err != nil {
+			return false
+		}
+		return field.Uint() <= maxVal
 	case reflect.Float32, reflect.Float64:
-		return field.Float() <= float64(maxVal)
+		maxVal, err := strconv.ParseFloat(params[0], 64)
+		if err != nil {
+			return false
+		}
+		return field.Float() <= maxVal
 	case reflect.String, reflect.Slice, reflect.Map, reflect.Array:
+		maxVal, err := strconv.Atoi(params[0])
+		if err != nil {
+			return false
+		}
 		return field.Len() <= maxVal
 	default:
 		return false
