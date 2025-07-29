@@ -72,11 +72,10 @@ func Request[RequestCtx RequestContext](router *Router, method HTTPMethod, path 
 		if err != nil {
 			if errorHandler := router.errorHandler; errorHandler != nil {
 				(*errorHandler)(req, w, err)
-			}
-			// Write structured error response
-			if !WriteProblemDetails(w, err) {
-				// Fallback for non-structured errors
-				WriteProblemDetails(w, NewBadRequestError("Request validation failed"))
+			} else {
+				if !WriteProblemDetails(w, err) {
+					WriteProblemDetails(w, NewBadRequestError("Request validation failed"))
+				}
 			}
 			return
 		}
@@ -90,10 +89,10 @@ func Request[RequestCtx RequestContext](router *Router, method HTTPMethod, path 
 		if handlerErr != nil {
 			if errorHandler := router.errorHandler; errorHandler != nil {
 				(*errorHandler)(req, w, handlerErr)
-			}
-			if !WriteProblemDetails(w, handlerErr) {
-				// Fallback for non-structured errors
-				WriteProblemDetails(w, NewInternalServerError(handlerErr.Error()))
+			} else {
+				if !WriteProblemDetails(w, handlerErr) {
+					WriteProblemDetails(w, NewInternalServerError(handlerErr.Error()))
+				}
 			}
 			return
 		}
