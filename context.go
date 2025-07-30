@@ -136,6 +136,10 @@ type ContextWithBody[Body any] struct {
 	RawContext[Body, any, any, any]
 }
 
+type ContextWithQuery[QueryParams any] struct {
+	RawContext[any, QueryParams, any, any]
+}
+
 type ContextWithBodyAndQuery[Body, QueryParams any] struct {
 	RawContext[Body, QueryParams, any, any]
 }
