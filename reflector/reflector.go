@@ -28,6 +28,19 @@ func InitStructPointerField(refVal *reflect.Value, name string) {
 
 }
 
+// GetFieldNameFromTag extracts the field name from struct tags, preferring JSON tag
+func GetFieldNameFromTag(field reflect.StructField) string {
+	if jsonTag := field.Tag.Get("json"); jsonTag != "" {
+		// Extract the field name from JSON tag (ignore options like omitempty)
+		if commaIndex := strings.Index(jsonTag, ","); commaIndex != -1 {
+			return jsonTag[:commaIndex]
+		}
+		return jsonTag
+	}
+	// Fallback to field name
+	return field.Name
+}
+
 func ReadStringSlicesMapIntoStruct(refStruct *reflect.Value, values map[string][]string) error {
 
 	if refStruct == nil || (refStruct.Kind() != reflect.Pointer || refStruct.Elem().Kind() != reflect.Struct) {
@@ -43,7 +56,8 @@ func ReadStringSlicesMapIntoStruct(refStruct *reflect.Value, values map[string][
 	for i := 0; i < refOutputPtr.NumField(); i++ {
 
 		outputField := refOutputPtr.Field(i)
-		fieldName := strings.ToLower(refOutputPtr.Type().Field(i).Name)
+		fieldType := refOutputPtr.Type().Field(i)
+		fieldName := GetFieldNameFromTag(fieldType)
 
 		if !outputField.IsValid() {
 			continue
@@ -66,7 +80,7 @@ func ReadStringSlicesMapIntoStruct(refStruct *reflect.Value, values map[string][
 			toBeAssigned = refInputVal.Index(0)
 		}
 
-		ConvertNumericStringValIntoNumberOutputVal(toBeAssigned, outputField)
+		ConvertStringToTypedValue(toBeAssigned, outputField)
 
 		if !toBeAssigned.Type().AssignableTo(outputField.Type()) || !refOutputPtr.CanSet() {
 			continue
@@ -89,18 +103,27 @@ func ReadStringMapIntoStruct(refStruct *reflect.Value, values map[string]string)
 	return ReadStringSlicesMapIntoStruct(refStruct, pathParamsToValues)
 }
 
-func ConvertNumericStringValIntoNumberOutputVal(refInputVal, refOutputVal reflect.Value) error {
+// ConvertStringToTypedValue converts string values to their appropriate types
+func ConvertStringToTypedValue(refInputVal, refOutputVal reflect.Value) error {
 	if refInputVal.Kind() != reflect.String {
 		return nil
 	}
 	switch refOutputVal.Kind() {
-	case reflect.Int:
-		val, _ := strconv.Atoi(refInputVal.String())
-		refOutputVal.SetInt(int64(val))
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		val, _ := strconv.ParseInt(refInputVal.String(), 10, 64)
+		refOutputVal.SetInt(val)
 		break
-	case reflect.Float64:
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		val, _ := strconv.ParseUint(refInputVal.String(), 10, 64)
+		refOutputVal.SetUint(val)
+		break
+	case reflect.Float32, reflect.Float64:
 		val, _ := strconv.ParseFloat(refInputVal.String(), 64)
 		refOutputVal.SetFloat(val)
+		break
+	case reflect.Bool:
+		val, _ := strconv.ParseBool(refInputVal.String())
+		refOutputVal.SetBool(val)
 		break
 	}
 	return nil

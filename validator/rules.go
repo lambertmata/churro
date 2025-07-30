@@ -174,8 +174,22 @@ func BooleanRule(field reflect.Value, _ []string) bool {
 	return field.Kind() == reflect.Bool
 }
 
-// NumberRule Value under validation must be a numeric type.
+// NumberRule Value under validation must be numeric (for numeric types) or contain only digits (for strings).
 func NumberRule(field reflect.Value, _ []string) bool {
+	if field.Kind() == reflect.String {
+		// For strings, check if all characters are digits
+		str := field.String()
+		if str == "" {
+			return false
+		}
+		for _, char := range str {
+			if char < '0' || char > '9' {
+				return false
+			}
+		}
+		return true
+	}
+	// For other types, check if they are numeric
 	return IsNumber(field, nil)
 }
 
