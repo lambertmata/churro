@@ -16,7 +16,7 @@ func TestNewValidator(t *testing.T) {
 	}
 
 	// Check that default rules are registered
-	expectedRules := []string{"required", "min", "max", "email", "date", "in", "uuid"}
+	expectedRules := []string{"required", "min", "max", "email", "date", "date_format", "in", "uuid"}
 	for _, rule := range expectedRules {
 		if _, exists := v.rules[rule]; !exists {
 			t.Errorf("Default rule '%s' not registered", rule)
@@ -45,7 +45,11 @@ func TestRequiredRule(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			val := reflect.ValueOf(tt.value)
-			result := RequiredRule(val, nil)
+			result, err := RequiredRule(val, nil)
+			if err != nil {
+				t.Errorf("RequiredRule() returned error: %v", err)
+				return
+			}
 			if result != tt.expected {
 				t.Errorf("RequiredRule() = %v, expected %v for value %v", result, tt.expected, tt.value)
 			}
@@ -71,7 +75,11 @@ func TestEmailRule(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			val := reflect.ValueOf(tt.email)
-			result := EmailRule(val, nil)
+			result, err := EmailRule(val, nil)
+			if err != nil {
+				t.Errorf("EmailRule() returned error: %v", err)
+				return
+			}
 			if result != tt.expected {
 				t.Errorf("EmailRule() = %v, expected %v for email %s", result, tt.expected, tt.email)
 			}
@@ -114,7 +122,15 @@ func TestMinRule(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			val := reflect.ValueOf(tt.value)
-			result := MinRule(val, tt.params)
+			result, err := MinRule(val, tt.params)
+			// For error cases, we expect either false result or an error
+			if !tt.expected && err != nil {
+				return
+			}
+			if err != nil {
+				t.Errorf("MinRule() returned unexpected error: %v", err)
+				return
+			}
 			if result != tt.expected {
 				t.Errorf("MinRule() = %v, expected %v for value %v with params %v", result, tt.expected, tt.value, tt.params)
 			}
@@ -151,7 +167,15 @@ func TestMaxRule(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			val := reflect.ValueOf(tt.value)
-			result := MaxRule(val, tt.params)
+			result, err := MaxRule(val, tt.params)
+			// For error cases, we expect either false result or an error
+			if !tt.expected && err != nil {
+				return
+			}
+			if err != nil {
+				t.Errorf("MaxRule() returned unexpected error: %v", err)
+				return
+			}
 			if result != tt.expected {
 				t.Errorf("MaxRule() = %v, expected %v for value %v with params %v", result, tt.expected, tt.value, tt.params)
 			}
@@ -163,22 +187,64 @@ func TestDateRule(t *testing.T) {
 	tests := []struct {
 		name     string
 		date     string
-		params   []string
 		expected bool
 	}{
-		{"valid date default format", "2023-01-15 00:00:00", []string{}, true},
-		{"valid date custom format", "15/01/2023", []string{"02/01/2006"}, true},
-		{"invalid date default format", "2023-13-45", []string{}, false},
-		{"invalid date custom format", "2023/01/15", []string{"02/01/2006"}, false},
-		{"empty date", "", []string{}, false},
+		{"valid date YYYY-MM-DD format", "2023-01-15", true},
+		{"invalid date YYYY-MM-DD format", "2023-13-45", false},
+		{"invalid date with timestamp", "2023-01-15 00:00:00", false},
+		{"empty date", "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			val := reflect.ValueOf(tt.date)
-			result := DateRule(val, tt.params)
+			result, err := DateRule(val, []string{})
+			
+			// If expected is false and we got an error, that's correct
+			if !tt.expected && err != nil {
+				return
+			}
+			
+			if err != nil {
+				t.Errorf("DateRule() returned unexpected error: %v", err)
+				return
+			}
 			if result != tt.expected {
-				t.Errorf("DateRule() = %v, expected %v for date %s with params %v", result, tt.expected, tt.date, tt.params)
+				t.Errorf("DateRule() = %v, expected %v for date %s", result, tt.expected, tt.date)
+			}
+		})
+	}
+}
+
+func TestDateFormatRule(t *testing.T) {
+	tests := []struct {
+		name     string
+		date     string
+		params   []string
+		expected bool
+	}{
+		{"valid date custom format", "15/01/2023", []string{"02/01/2006"}, true},
+		{"valid timestamp format", "2023-01-15 14:30:05", []string{"2006-01-02 15:04:05"}, true},
+		{"invalid date custom format", "2023/01/15", []string{"02/01/2006"}, false},
+		{"empty date", "", []string{"2006-01-02"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			val := reflect.ValueOf(tt.date)
+			result, err := DateFormatRule(val, tt.params)
+			
+			// If expected is false and we got an error, that's correct
+			if !tt.expected && err != nil {
+				return
+			}
+			
+			if err != nil {
+				t.Errorf("DateFormatRule() returned unexpected error: %v", err)
+				return
+			}
+			if result != tt.expected {
+				t.Errorf("DateFormatRule() = %v, expected %v for date %s with params %v", result, tt.expected, tt.date, tt.params)
 			}
 		})
 	}
@@ -200,7 +266,15 @@ func TestInArrayRule(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			val := reflect.ValueOf(tt.value)
-			result := InArrayRule(val, tt.params)
+			result, err := InArrayRule(val, tt.params)
+			// For empty array case, we expect an error
+			if !tt.expected && err != nil {
+				return
+			}
+			if err != nil {
+				t.Errorf("InArrayRule() returned unexpected error: %v", err)
+				return
+			}
 			if result != tt.expected {
 				t.Errorf("InArrayRule() = %v, expected %v for value %s with params %v", result, tt.expected, tt.value, tt.params)
 			}
@@ -225,7 +299,11 @@ func TestUUIDRule(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			val := reflect.ValueOf(tt.uuid)
-			result := UUIDRule(val, nil)
+			result, err := UUIDRule(val, nil)
+			if err != nil {
+				t.Errorf("UUIDRule() returned error: %v", err)
+				return
+			}
 			if result != tt.expected {
 				t.Errorf("UUIDRule() = %v, expected %v for UUID %s", result, tt.expected, tt.uuid)
 			}

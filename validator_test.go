@@ -11,7 +11,8 @@ type CreateUserProfile struct {
 	Email       *string `json:"email" validate:"required|email"`
 	Name        string  `json:"name" validate:"required"`
 	LastName    string  `json:"last_name" validate:""`
-	BirthDate   string  `json:"birth_date" validate:"required|date"`
+	BirthDate   string  `json:"birth_date" validate:"required|date_format:2006-01-02 00:00:00"`
+	StartDate   string  `json:"start_date" validate:"date"`
 	Description string  `json:"description" validate:"required|min:3"`
 	IsTest      bool    `json:"is_test" validate:"required"`
 }
@@ -47,6 +48,7 @@ func TestStructValidation(t *testing.T) {
 		Email:       &email,
 		LastName:    "Mata",
 		BirthDate:   "1999-01-01 00:00:00",
+		StartDate:   "2023-01-15",
 		Description: "Software",
 		IsTest:      true,
 	}
@@ -69,6 +71,7 @@ func TestJSONValidation(t *testing.T) {
 			"last_name": "Mata",			
 			"email": "lambert@example",
 			"birth_date": "1999-01-01 00:00:00",
+			"start_date": "2023-01-15",
 			"description": "Software",
 			"is_test": true
 		}

@@ -16,6 +16,9 @@ type FieldValidationError struct {
 }
 
 func (e *FieldValidationError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("Field '%s': %s", e.Field, e.Err.Error())
+	}
 	return fmt.Sprintf(
 		"failed %s rule validation on %s field",
 		strings.ToLower(e.Rule),
@@ -43,7 +46,7 @@ func (e *UnknownRuleError) Error() string {
 	return fmt.Sprintf("invalid rule %s for %s", e.Rule, e.Field)
 }
 
-type ValidationFunc func(field reflect.Value, params []string) bool
+type ValidationFunc func(field reflect.Value, params []string) (bool, error)
 
 // Validator validates
 // required,required_with,required_if
@@ -66,6 +69,7 @@ func (v *Validator) registerDefaultRules() error {
 	v.RegisterRule("max", MaxRule)
 	v.RegisterRule("email", EmailRule)
 	v.RegisterRule("date", DateRule)
+	v.RegisterRule("date_format", DateFormatRule)
 	v.RegisterRule("in", InArrayRule)
 	v.RegisterRule("uuid", UUIDRule)
 	v.RegisterRule("boolean", BooleanRule)
@@ -87,17 +91,22 @@ func NewValidator() *Validator {
 // ExtractPartsFromValidationString returns from
 func (v *Validator) ExtractPartsFromValidationString(str string) (name string, params []string, error error) {
 
-	parts := utils.SplitString(str, ":")
-	partsLen := len(parts)
-
-	if partsLen < 1 {
+	if str == "" {
 		return "", nil, errors.New("validation string is empty")
 	}
 
-	name = parts[0]
+	// Split only on the first colon to separate rule name from parameters
+	colonIndex := strings.Index(str, ":")
+	if colonIndex == -1 {
+		// No parameters
+		return str, nil, nil
+	}
 
-	if partsLen == 2 {
-		params = utils.SplitString(parts[1], ",")
+	name = str[:colonIndex]
+	paramString := str[colonIndex+1:]
+
+	if paramString != "" {
+		params = utils.SplitString(paramString, ",")
 	}
 
 	return name, params, nil
@@ -121,8 +130,13 @@ func (v *Validator) ValidateWithRules(fieldName string, input reflect.Value, raw
 			return &UnknownRuleError{fieldName, validationRule}
 		}
 
-		if !ruleFn(input, params) {
+		valid, err := ruleFn(input, params)
+		if err != nil {
 			return &FieldValidationError{fieldName, validationRule, err}
+		}
+		
+		if !valid {
+			return &FieldValidationError{fieldName, validationRule, nil}
 		}
 	}
 	return nil

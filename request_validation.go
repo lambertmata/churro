@@ -30,7 +30,7 @@ func collectValidationErrors(err error) []string {
 	// Extract field validation errors with context
 	var fieldValidationError *validator.FieldValidationError
 	if errors.As(err, &fieldValidationError) {
-		errorList = append(errorList, fmt.Sprintf("Field '%s': %s", fieldValidationError.Field, fieldValidationError.Error()))
+		errorList = append(errorList, fieldValidationError.Error())
 		return errorList
 	}
 
@@ -56,7 +56,7 @@ func wrapProblemDetailsError(err error) error {
 	if errors.As(err, &fieldValidationError) {
 		return NewValidationError(errorMessages).WithCause(err)
 	} else if errors.As(err, &ruleParamsError) {
-		return NewProblemDetails(http.StatusBadRequest, "Validation Error", "Request validation failed").
+		return NewProblemDetails(http.StatusBadRequest, "Validation Error", ruleParamsError.Error()).
 			WithType("validation-error").
 			WithExtension("errors", errorMessages).
 			WithCause(err)
